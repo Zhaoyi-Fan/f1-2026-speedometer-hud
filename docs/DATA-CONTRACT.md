@@ -1,7 +1,8 @@
 # Data contract
 
-What the app reads, what it records, and what the values mean. Everything here was verified in-game
-on the VRC Formula Alpha 2026 (Pro) V1.0 with CSP build 4116 (September 2026).
+This document describes the telemetry fields used by the HUD and their replay encoding.
+The reference setup is VRC Formula Alpha 2026 Pro V1.0 with CSP build 4116, tested in-game
+in September 2026.
 
 ## Sources per mode
 
@@ -19,9 +20,9 @@ or 0 when "lock to player car" is on.
 
 The car's physics script publishes a channel map with `ac.store('<carID>_CAN', …)`: a stringified
 table whose `inputs` entry maps channel names to `{ index, isBoolean }`. The app parses it once per
-session and reads `ac.getCarPhysics(i).scriptControllerInputs[index]` for any car, AI included.
-Index numbers are never hard-coded. The map appears a few seconds after the car boots (about 15 s
-after a race launch).
+session and reads `ac.getCarPhysics(i).scriptControllerInputs[index]` for the selected car,
+including AI cars. Channel indices come from the map. It becomes available a few seconds after
+the car starts (about 15 s after a race launch).
 
 Channels used:
 
@@ -47,13 +48,16 @@ Native CSP fields used: `speedKmh`, `rpm`, `gear`, `gas`, `brake`, `kersCharge` 
 
 ## Straight Mode badge logic
 
-Wings open (`drsMode` or either extra switch) → green. Otherwise latch 2 → blue, latch 1 → white,
-latch 3 → yellow, else dark. Below 1 km/h the badge is dark, as on the steering wheel LEDs.
+When the wings are open (`drsMode` or either extra switch), the indicator is green. Otherwise,
+latch 2 is blue, latch 1 is white and latch 3 is yellow; all other values leave it dark.
+Below 1 km/h it stays dark, matching the steering wheel LEDs.
 
 ## Replay stream
 
-`ac.ReplayStream`, recorded every second replay frame while live, 22 car slots, 11 bytes per car
-(242 bytes per frame). Field names are part of the stream identity and must not change.
+The app uses `ac.ReplayStream` to record energy data every second replay frame during live
+sessions, when recording is enabled. There are 22 car slots at 11 bytes per car (242 bytes per
+recorded frame). Field names are part of the stream identity and must remain unchanged for
+replay compatibility.
 
 | Field | Type | Encoding |
 | --- | --- | --- |
@@ -65,9 +69,10 @@ latch 3 → yellow, else dark. Below 1 km/h the badge is dark, as on the steerin
 | `f26flags` | uint16 | bit 0 OT active, 1 OT pending, 2 boost, 3 charge, 4 PL, 5 PLP, 6-7 SM latch, 8 SM active, 9 wing F, 10 wing R, 11 engine running, 12 pit limiter, 15 slot recorded |
 | `f26pack` | uint16 | bits 0-3 STRAT − 1, 4-8 split, 9-12 PU mode |
 
-A slot without bit 15 reads as "no data" (`--`), never as garbage. Cars with index 22 or higher are
-not recorded. Assetto Corsa's own replay does not contain `kersCharge` or `kersInput`; extra
-switches are recorded, which is why the SM badge works in any replay.
+If bit 15 is unset, the slot is treated as missing data and the HUD shows `--`. Cars with index
+22 or higher are not recorded. Assetto Corsa's native replay does not contain `kersCharge` or
+`kersInput`, but does record the extra switches. These provide the SM wing state when the
+app's energy stream is absent.
 
 ## Files the app writes
 
