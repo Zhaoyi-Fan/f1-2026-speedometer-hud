@@ -1,8 +1,7 @@
 # F1 2026 Speedometer HUD（中文说明）
 
 **神似转播画面的 Assetto Corsa 速度表，把 2026 赛季转播里看不到的东西全部画出来：电池、MGU-K
-功率、直线模式 SM、超车模式 OT 和 Boost。为 VRC Formula Alpha 2026（Pro 版）打造，跟随镜头
-车，回放里同样可用。English: [README.md](README.md)**
+功率、直线模式 SM、超车模式 OT 和 Boost。为 VRC Formula Alpha 2026（Pro 版）打造，跟随镜头车，回放里同样可用。English: [README.md](README.md)**
 
 ![demo](docs/demo.gif)
 
