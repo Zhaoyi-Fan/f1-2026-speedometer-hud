@@ -8,13 +8,17 @@ HUD 默认跟随镜头中的车辆，支持查看回放中已录制的能量数�
 
 ![demo](docs/demo.gif)
 
+*演示录制于 v0.9.1 表盘更新之前；新版表盘见下方示意图。*
+
 应用通过 Custom Shaders Patch（CSP）运行，将 MultiViewer 风格的表盘与车辆能量遥测放在一起，
 方便驾驶或看回放时观察电量消耗和回收情况。支持玩家车和 AI 车辆，不修改车辆或赛道文件。
 
 ## 显示内容
 
 **表盘：**显示车速、转速和挡位，蓝色弧线表示车速，绿色表示油门，红色表示刹车。
-布局和配色参考 MultiViewer 风格，由代码绘制。表盘内还有三个状态标识：
+车速刻度为 0–360 km/h，每 60 一格；超过 360 时蓝弧保持填满，中央数字继续显示实际车速。
+油门和刹车弧线上分别标有 `THROTTLE` 和 `BRAKE`。布局和配色参考 MultiViewer 风格，
+由代码绘制。表盘内还有三个状态标识：
 
 | 标识 | 暗色 | 颜色含义 |
 | --- | --- | --- |
@@ -38,7 +42,7 @@ HUD 默认跟随镜头中的车辆，支持查看回放中已录制的能量数�
 HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看对应车辆已录制的数据；也可以绑定按键，
 让 HUD 始终显示自己的车。
 
-![badge states](docs/dial-states.png)
+![v0.9.1 表盘状态示意图](docs/dial-states.png)
 
 ## 2026新规
 
@@ -65,10 +69,13 @@ HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看
 
 ## 安装
 
-**使用发布包：**在 [v0.9.0 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.0)
-下载 `f1-2026-speedometer-hud-v0.9.0.zip`，
+**使用发布包：**在 [v0.9.1 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.1)
+下载 `f1-2026-speedometer-hud-v0.9.1.zip`，
 解压到 Assetto Corsa 根目录（包含 `acs.exe` 的文件夹）。解压后应能找到
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`。也可以将压缩包拖入 Content Manager 安装。
+
+**更新旧版：**先退出当前游戏会话，再将新版压缩包覆盖安装到原位置，允许替换应用文件。
+现有 HUD 设置会保留。重新进入比赛或回放后，可在设置窗口确认版本为 **0.9.1**。
 
 **从源码安装：**克隆仓库，用 PowerShell 运行 `tools\deploy.ps1`，需要时加上
 `-AcRoot "D:\path\to\assettocorsa"`。

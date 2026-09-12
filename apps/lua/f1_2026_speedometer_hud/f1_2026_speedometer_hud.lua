@@ -8,11 +8,11 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9'
+local VERSION = '0.9.1'
 local TAG = '[F1-2026-HUD]'
 local CAR_PREFIX = 'vrc_formula_alpha_2026'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
-local SPEED_MAX = 400        -- dial full scale, same as the MultiViewer dial
+local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
 local KW_MAX = 350           -- MGU-K bar full scale (2026 MGU-K)
 local ES_USABLE_MJ = 4       -- 2026 energy store usable window
 local ES_FLOOR_MJ = 4        -- VRC: usable window sits on top of a 4 MJ floor (ESOC 4..8 MJ)
@@ -147,9 +147,9 @@ local function fmtInt(v) return string.format('%d', math.floor((v or 0) + 0.5)) 
 
 local function isFA26(carID) return carID ~= nil and string.startsWith(carID, CAR_PREFIX) end
 
--- returns: numbers bold, numbers regular, label bold, label regular. Labels switch to the Chinese font
+-- returns: numbers bold, numbers regular, label bold, label regular, dial label medium. Panel labels switch to the Chinese font
 -- in zh mode (Bahnschrift has no CJK glyphs); digits and the dial stay on the main font.
-local fontCache = { key = nil, bold = nil, regular = nil, labelBold = nil, labelRegular = nil }
+local fontCache = { key = nil, bold = nil, regular = nil, labelBold = nil, labelRegular = nil, medium = nil }
 local function getFonts()
   local name = cfg.fontName
   if name == nil or name == '' then name = 'Segoe UI' end
@@ -161,6 +161,7 @@ local function getFonts()
     fontCache.key = key
     fontCache.bold = ui.DWriteFont(name):weight(ui.DWriteFont.Weight.Bold)
     fontCache.regular = ui.DWriteFont(name)
+    fontCache.medium = ui.DWriteFont(name):weight(ui.DWriteFont.Weight.Medium)
     if labelName == name then
       fontCache.labelBold, fontCache.labelRegular = fontCache.bold, fontCache.regular
     else
@@ -168,7 +169,7 @@ local function getFonts()
       fontCache.labelRegular = ui.DWriteFont(labelName)
     end
   end
-  return fontCache.bold, fontCache.regular, fontCache.labelBold, fontCache.labelRegular
+  return fontCache.bold, fontCache.regular, fontCache.labelBold, fontCache.labelRegular, fontCache.medium
 end
 
 -- ---------------------------------------------------------------------------------------------
@@ -560,6 +561,49 @@ local function text(font, str, size, x, y, w, h, color, hAlign)
   ui.popDWriteFont()
 end
 
+-- The scale and the blue fill must use the same speed-to-angle mapping.
+local function speedAngle(speed)
+  return 124 + 292 * clamp(speed, 0, SPEED_MAX) / SPEED_MAX
+end
+
+local function arcText(font, str, size, center, radius, angle)
+  local a = math.rad(angle)
+  local p = vec2(center.x + radius * math.cos(a), center.y + radius * math.sin(a))
+  local w, h = size * 3.5, size * 1.6
+  ui.beginRotation()
+  text(font, str, size, p.x - w * 0.5, p.y - h * 0.5, w, h, C.white)
+  -- CSP uses 90 degrees for unrotated text; -angle follows the clockwise tangent.
+  ui.endPivotRotation(-angle, p)
+end
+
+-- Measure at design size once per font change. Proportional spacing keeps the curved words
+-- balanced, while scaling the cached advances with the dial preserves their proportions.
+local arcLabelCache = { font = nil, size = nil, labels = {} }
+local function curvedLabel(font, str, size, center, radius, angle, s)
+  if arcLabelCache.font ~= font or arcLabelCache.size ~= size then
+    arcLabelCache = { font = font, size = size, labels = {} }
+  end
+  local label = arcLabelCache.labels[str]
+  if not label then
+    label = { width = 0, glyphs = {} }
+    ui.pushDWriteFont(font)
+    for i = 1, #str do
+      local ch = str:sub(i, i)
+      local width = ui.measureDWriteText(ch, size).x
+      label.glyphs[i] = { ch = ch, advance = label.width + width * 0.5 }
+      label.width = label.width + width + 0.7
+    end
+    ui.popDWriteFont()
+    label.width = label.width - 0.7
+    arcLabelCache.labels[str] = label
+  end
+  for i = 1, #label.glyphs do
+    local glyph = label.glyphs[i]
+    local offset = math.deg((glyph.advance - label.width * 0.5) / radius)
+    arcText(font, glyph.ch, size * s, center, radius * s, angle + offset)
+  end
+end
+
 local function pill(font, x, y, w, h, fill, border, label, size, txtColor, rounding, thickness)
   local p1, p2 = vec2(x, y), vec2(x + w, y + h)
   if fill then ui.drawRectFilled(p1, p2, fill, rounding) end
@@ -585,26 +629,33 @@ local SM_STYLE = {
 }
 local SM_CHIP_KEY = { off = 'sm_off', avail = 'sm_avail', pre = 'sm_pre', late = 'sm_late', on = 'sm_on' }
 
-local function drawDial(S, ox, oy, s, fontB, fontR)
+local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   local c = vec2(ox + 170 * s, oy + 170 * s)
   ui.drawCircleFilled(c, 169 * s, C.disc, 96)
   arc(c, 154 * s, 124, 416, 27 * s, C.track)
   arc(c, 119.5 * s, 124, 308, 27 * s, C.track)
   arc(c, 119.5 * s, -44, 56, 27 * s, C.track)
 
-  local spd = clamp(S.speed or 0, 0, SPEED_MAX)
-  if spd > 0.5 then arc(c, 154 * s, 124, 124 + 292 * spd / SPEED_MAX, 27 * s, C.blue) end
+  local spd = math.max(S.speed or 0, 0)
+  if spd > 0.5 then arc(c, 154 * s, 124, speedAngle(spd), 27 * s, C.blue) end
   local gas = clamp(S.gas or 0, 0, 1)
   if gas > 0.01 then arc(c, 119.5 * s, 124, 124 + 184 * gas, 27 * s, C.green) end
   local brk = clamp(S.brake or 0, 0, 1)
   if brk > 0.01 then arc(c, 119.5 * s, 56, 56 - 100 * brk, 27 * s, C.red) end
 
+  -- Fixed labels sit above both the empty tracks and the active fills.
+  for speed = 0, SPEED_MAX, 60 do
+    arcText(fontM, tostring(speed), 14 * s, c, 154 * s, speedAngle(speed))
+  end
+  curvedLabel(fontM, 'THROTTLE', 14, c, 119.5, 180, s)
+  curvedLabel(fontM, 'BRAKE', 14, c, 119.5, 360, s)
+
   -- vertical layout (design units, v0.8): the digit stack sits 8-12 higher than the MultiViewer original
   -- to make room for the Boost button under the SM / OT badges; GEAR moves 3 down. Text boxes are centred.
   text(fontB, fmtInt(spd), 56 * s, ox + 70 * s, oy + 78 * s, 200 * s, 62 * s, C.white)
-  text(fontR, 'KMH', 15 * s, ox + 120 * s, oy + 143 * s, 100 * s, 22 * s, C.grey)
+  text(fontM, 'KMH', 16 * s, ox + 120 * s, oy + 143 * s, 100 * s, 22 * s, C.grey)
   text(fontB, fmtInt(S.rpm), 27 * s, ox + 95 * s, oy + 175 * s, 150 * s, 34 * s, C.white)
-  text(fontR, 'RPM', 13 * s, ox + 120 * s, oy + 212 * s, 100 * s, 20 * s, C.grey)
+  text(fontM, 'RPM', 16 * s, ox + 120 * s, oy + 212 * s, 100 * s, 20 * s, C.grey)
 
   -- badge cluster where the DRS badge used to be: SM | OT on top, the Boost button spanning both below.
   -- Width budget (v0.9): the throttle / brake track start caps (r 13.5 at (103.2, 269.1) and (236.8, 269.1))
@@ -623,8 +674,16 @@ local function drawDial(S, ox, oy, s, fontB, fontR)
 
   local g = S.gear or 0
   local gearStr = g == 0 and 'N' or (g < 0 and 'R' or tostring(g))
-  text(fontR, 'GEAR', 13 * s, ox + 105 * s, oy + 299 * s, 62 * s, 30 * s, C.grey, ui.Alignment.End)
-  text(fontB, gearStr, 27 * s, ox + 174 * s, oy + 297 * s, 60 * s, 34 * s, C.white, ui.Alignment.Start)
+  ui.pushDWriteFont(fontM)
+  local gearLabelW = ui.measureDWriteText('GEAR', 14 * s).x
+  ui.popDWriteFont()
+  ui.pushDWriteFont(fontB)
+  local gearValueW = ui.measureDWriteText(gearStr, 27 * s).x
+  ui.popDWriteFont()
+  local gearGap = 7 * s
+  local gearX = c.x - (gearLabelW + gearGap + gearValueW) * 0.5
+  text(fontM, 'GEAR', 14 * s, gearX, oy + 299 * s, gearLabelW, 30 * s, C.grey, ui.Alignment.Start)
+  text(fontB, gearStr, 27 * s, gearX + gearLabelW + gearGap, oy + 297 * s, gearValueW, 34 * s, C.white, ui.Alignment.Start)
 end
 
 local function socColor(soc)
@@ -783,12 +842,12 @@ end
 function script.windowMain(dt)
   local s = cfg.scale
   if s < 0.3 then s = 0.3 end
-  local fontB, fontR, fontLB, fontLR = getFonts()
+  local fontB, fontR, fontLB, fontLR, fontM = getFonts()
   local o = ui.getCursor()
   local ox, oy = o.x, o.y
   local leftW = cfg.showBars and BARS_TOTAL_W or DIAL_W
   local dialOx = ox + (cfg.showBars and DIAL_INSET or 0) * s
-  drawDial(view, dialOx, oy, s, fontB, fontR)
+  drawDial(view, dialOx, oy, s, fontB, fontR, fontM)
   if cfg.showBars then drawSideBars(view, ox, oy, s, fontB, fontR) end
   if cfg.showPanel then drawPanel(view, ox + (leftW + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR) end
   ui.dummy(vec2((leftW + (cfg.showPanel and (PANEL_GAP + PANEL_W) or 0)) * s, 340 * s))

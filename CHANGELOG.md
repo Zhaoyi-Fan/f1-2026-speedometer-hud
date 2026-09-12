@@ -2,6 +2,15 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
+## 0.9.1 — 2026-09-12
+
+- Changed the outer arc to 0–360 km/h, with 14-unit speed labels every 60 km/h and 180 at the top.
+  Above 360 km/h the arc stays full while the central readout continues to show the actual speed.
+- Added 14-unit curved `THROTTLE` and `BRAKE` labels, visible over both inactive tracks and active fills.
+- Set `KMH` and `RPM` labels to 16 units and `GEAR` to 14 units.
+- Gave the arc lettering, speed labels, `KMH`, `RPM` and `GEAR` a slightly heavier medium font weight.
+- Centred `GEAR` and the current gear together using their measured text widths.
+
 ## 0.9.0 — 2026-09-10 (first public pre-release)
 
 - Narrowed the SM, OT and BOOST indicators to 96 design units to prevent overlap with the ends

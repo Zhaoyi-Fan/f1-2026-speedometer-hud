@@ -8,6 +8,8 @@ Overtake and Boost. The HUD follows the camera car and can display energy data s
 
 ![demo](docs/demo.gif)
 
+*Demo recorded before the v0.9.1 dial update; the updated dial is illustrated below.*
+
 The app runs in Custom Shaders Patch (CSP). It combines a MultiViewer-style dial with the car's
 energy telemetry, so you can monitor deployment and harvesting while driving or watching a replay.
 It supports AI cars as well as the player's car and does not modify car or track files.
@@ -15,8 +17,10 @@ It supports AI cars as well as the player's car and does not modify car or track
 ## Display
 
 **Dial:** speed, RPM and gear, with a blue speed arc, green throttle arc and red brake arc.
-The layout and colours follow the MultiViewer style and are drawn in code. Three indicators show
-the 2026 systems:
+The speed scale runs from 0 to 360 km/h in steps of 60; above 360, the arc stays full while the
+central number continues to show the actual speed. Curved `THROTTLE` and `BRAKE` labels identify
+the input arcs. The layout and colours follow the MultiViewer style and are drawn in code.
+Three indicators show the 2026 systems:
 
 | Indicator | Dark | Colour states |
 | --- | --- | --- |
@@ -43,7 +47,7 @@ energy panel.
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![badge states](docs/dial-states.png)
+![v0.9.1 dial state illustrations](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -76,12 +80,16 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.0.zip` from the
-[v0.9.0 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.0)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.1.zip` from the
+[v0.9.1 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.1)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
 also works.
+
+**Updating:** close the current game session, install the new zip over the existing app and
+allow its files to be replaced. The existing HUD settings are retained. Start a new session or
+replay and check that the settings window shows version **0.9.1**.
 
 **From source:** clone the repository and run `tools\deploy.ps1` (PowerShell), optionally
 with `-AcRoot "D:\path\to\assettocorsa"`.
