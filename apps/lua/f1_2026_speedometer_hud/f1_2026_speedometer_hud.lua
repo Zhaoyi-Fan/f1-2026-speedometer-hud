@@ -1,16 +1,13 @@
 -- F1 2026 Speedometer HUD
--- Broadcast-style speedometer for the VRC Formula Alpha 2026 (Pro): the MultiViewer dial
--- (speed / throttle / brake / RPM / gear) plus a 2026-regulations energy panel (battery, MGU-K
--- power and live cap, lap deploy/regen, STRAT/split/PU mode, Straight Mode / Overtake / Boost /
--- Charge / Power-Limited states). Follows the camera-focused car. Records its own replay stream
--- so replays made with the app running keep the energy data of every car.
+-- Broadcast-style speedometer with exact FA26 Pro/native and conventional DRS adapters.
+-- The original dial is shared; energy and state fields depend on the viewed vehicle.
+-- Keeps the Pro energy stream and records verified native fields separately for slots 0-21.
 -- Read-only with respect to car and track files (league-safe).
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.1'
+local VERSION = '0.9.2'
 local TAG = '[F1-2026-HUD]'
-local CAR_PREFIX = 'vrc_formula_alpha_2026'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
 local KW_MAX = 350           -- MGU-K bar full scale (2026 MGU-K)
@@ -69,10 +66,11 @@ local C = {
 local PU_MODE_NAMES = { 'RACE', 'AD1', 'AD2', 'FS', 'FW', 'IN', 'ES', 'Q', 'K2', 'K2+', 'SLO', 'SC', 'T4', 'RS' }
 
 -- UI strings. Broadcast abbreviations (SM, OT, Boost, PL, PLP, STRAT, PU, MGU-K, KMH, RPM, GEAR) stay
--- untranslated on purpose, like the on-air graphics on Chinese F1 broadcasts. Reviewed with the user 2026-09-10.
+-- untranslated on purpose, like the on-air graphics on Chinese F1 broadcasts. Reviewed 2026-09-10.
 local STR = {
   battery = { en = 'Battery', zh = '电池' },
   harvest = { en = 'harvest', zh = '回收' },
+  recovering = { en = 'Recovering', zh = '正在回收' },
   cap = { en = 'cap %s kW', zh = '上限 %s kW' },
   clip = { en = 'clip %s kW', zh = '强制回收 %s kW' },
   lapEnergy = { en = 'Lap energy', zh = '本圈能量' },
@@ -104,12 +102,12 @@ local STR = {
   bindings = { en = 'Bindings', zh = '按键绑定' },
   togglePanel = { en = 'Toggle energy panel', zh = '切换能量面板' },
   replay = { en = 'Replay', zh = '回放' },
-  record = { en = 'Record energy data of every car into replays', zh = '把所有车的能量数据录进回放' },
+  record = { en = 'Record supported car states into replays', zh = '将已支持车辆的状态录进回放' },
   streamOk = { en = 'Stream: ok, %d car slots, every %d%s frame, %d bytes per frame', zh = '回放流：正常，%d 个车位，每 %d%s 帧记录一次，每帧 %d 字节' },
   streamErr = { en = 'Stream: unavailable: %s', zh = '回放流：不可用：%s' },
   recorded = { en = 'Cars recorded this frame: %d', zh = '本帧记录车辆数：%d' },
   diagnostics = { en = 'Diagnostics', zh = '诊断' },
-  diagPanel = { en = 'Show data source on the panel + run probes', zh = '在面板显示数据来源并运行探针' },
+  diagPanel = { en = 'Show data source and enable diagnostics', zh = '显示数据来源并启用诊断' },
   diagLog = { en = 'Write diagnostics to the CSP log every 5 s', zh = '每 5 秒把诊断写入 CSP 日志' },
   diagText = { en = 'Show technical readout (log mode)', zh = '显示技术读数（日志模式）' },
   version = { en = 'Version %s  |  replay mode: %s', zh = '版本 %s  |  回放模式：%s' },
@@ -140,12 +138,18 @@ local function clamp(v, a, b)
   return v
 end
 
-local function clampInt(v, a, b) return math.floor(clamp(v or 0, a, b) + 0.5) end
-local function u8(v) return clampInt(v, 0, 255) end
-local function i8(v) return clampInt(v, -128, 127) end
 local function fmtInt(v) return string.format('%d', math.floor((v or 0) + 0.5)) end
 
-local function isFA26(carID) return carID ~= nil and string.startsWith(carID, CAR_PREFIX) end
+local function valid(S, field)
+  return S.valid and S.valid[field] == true
+end
+
+local function validAll(S, ...)
+  for i = 1, select('#', ...) do
+    if not valid(S, select(i, ...)) then return false end
+  end
+  return true
+end
 
 -- returns: numbers bold, numbers regular, label bold, label regular, dial label medium. Panel labels switch to the Chinese font
 -- in zh mode (Bahnschrift has no CJK glyphs); digits and the dial stay on the main font.
@@ -173,230 +177,13 @@ local function getFonts()
 end
 
 -- ---------------------------------------------------------------------------------------------
--- VRC CAN bus: name -> { scriptControllerInputs index, isBoolean }, published by the physics
--- script as ac.store('<carID>_CAN', stringified struct). Same table for every FA26 in the session.
+-- Model-specific telemetry and replay contracts live in a separate, independently tested module.
 -- ---------------------------------------------------------------------------------------------
-
-local can = { inputs = nil, carID = nil, count = 0, lastTry = -10, err = nil }
-
-local function connectCAN(carID)
-  if can.inputs and can.carID == carID then return true end
-  local now = os.clock()
-  if now - can.lastTry < 1 then return false end
-  can.lastTry = now
-  local s = ac.load(carID .. '_CAN')
-  if type(s) ~= 'string' or s == '' then
-    can.err = 'ac.load(' .. carID .. '_CAN) empty'
-    return false
-  end
-  local ok, parsed = pcall(stringify.parse, s)
-  if not ok or type(parsed) ~= 'table' then
-    can.err = 'parse failed: ' .. tostring(parsed)
-    return false
-  end
-  local st = parsed.inputs and parsed or parsed[1]
-  if type(st) ~= 'table' or type(st.inputs) ~= 'table' then
-    can.err = 'no inputs table in struct'
-    return false
-  end
-  local n = 0
-  for _ in pairs(st.inputs) do n = n + 1 end
-  can.inputs, can.carID, can.count, can.err = st.inputs, carID, n, nil
-  ac.log(string.format('%s CAN map loaded for %s: %d channels', TAG, carID, n))
-  return true
-end
-
-local function rd(cphys, name)
-  local m = can.inputs[name]
-  if not m then return nil end
-  return cphys.scriptControllerInputs[m[1]]
-end
-
-local function rb(cphys, name)
-  local v = rd(cphys, name)
-  return v ~= nil and v > 0.5
-end
-
--- ---------------------------------------------------------------------------------------------
--- snapshot of one car (S)
--- ---------------------------------------------------------------------------------------------
-
-local function clearSnap(S)
-  for k in pairs(S) do S[k] = nil end
-end
-
-local function readNative(S, car)
-  S.index = car.index
-  S.speed = car.speedKmh
-  S.rpm = car.rpm
-  S.gear = car.gear
-  S.gas = car.gas
-  S.brake = car.brake
-  S.wingF = car.extraH          -- Straight Mode front wing actuator (extra switch H)
-  S.wingR = car.extraI          -- Straight Mode rear wing actuator (extra switch I)
-  S.socNative = car.kersCharge  -- AC native battery state (VRC's ESS writes it)
-  S.stratNative = (car.mgukDelivery or 0) + 1
-  S.name = ac.getDriverName(car.index) or ''
-end
-
-local function readLive(S, idx)
-  local car = ac.getCar(idx)
-  if not car then return false end
-  readNative(S, car)
-  local id = ac.getCarID(idx)
-  S.carID = id
-  S.fa26 = isFA26(id)
-  S.full = false
-  if not S.fa26 then
-    S.source = 'live: not an FA26, native data only'
-    return true
-  end
-  if not connectCAN(id) then
-    S.source = 'live: waiting for the CAN map'
-    return true
-  end
-  local cphys = ac.getCarPhysics(idx)
-  if not cphys then
-    S.source = 'live: no physics state'
-    return true
-  end
-  S.soc = S.socNative
-  S.esoc = rd(cphys, 'kersChargeESOC')
-  S.kw = rd(cphys, 'rearMotorPowerKW') or 0
-  S.deploy = rd(cphys, 'kersDeployMJ') or 0
-  S.regen = rd(cphys, 'kersRegenMJ') or 0
-  S.regenLimit = rd(cphys, 'kersRegenLimitMJ') or 0
-  S.cap = rd(cphys, 'mgukMaxPower') or 0
-  S.strat = S.stratNative
-  S.split = rd(cphys, 'deploymentSplit') or 0
-  S.puMode = rd(cphys, 'puMode') or 0
-  S.otActive = rb(cphys, 'isOvertakeActive')
-  S.otPending = rb(cphys, 'isOvertakeActivePending')
-  S.boost = rb(cphys, 'isHybridBoostActive')
-  S.charge = rb(cphys, 'isHybridAntiActive')
-  S.pl = rb(cphys, 'isPowerLimited')
-  S.plp = rb(cphys, 'isPowerLimitedPending')
-  S.latch = clampInt(rd(cphys, 'drsLatch') or 0, 0, 3)
-  S.smActive = rb(cphys, 'drsMode')
-  S.engineRunning = rb(cphys, 'isEngineRunning')
-  S.pitLimiter = rb(cphys, 'isPitLimiterActive')
-  S.full = true
-  S.source = (idx == 0) and 'live: CAN, player car' or ('live: CAN, car ' .. idx)
-  return true
-end
-
--- ---------------------------------------------------------------------------------------------
--- replay stream (recorded by this app while live; read back in replays)
--- flags bits: 0 OT active, 1 OT pending, 2 boost, 3 charge, 4 PL, 5 PLP, 6-7 SM latch,
--- 8 SM active, 9 wing F, 10 wing R, 11 engine running, 12 pit limiter, 15 slot recorded
--- pack bits: 0-3 strat-1, 4-8 split, 9-12 PU mode
--- ---------------------------------------------------------------------------------------------
-
-local RS, rsErr = nil, nil
-do
-  local ok, res = pcall(ac.ReplayStream, {
-    f26soc = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26kw = ac.StructItem.array(ac.StructItem.int8(), MAX_CARS),
-    f26deploy = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26regen = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26regenLimit = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26esoc = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26cap = ac.StructItem.array(ac.StructItem.uint8(), MAX_CARS),
-    f26flags = ac.StructItem.array(ac.StructItem.uint16(), MAX_CARS),
-    f26pack = ac.StructItem.array(ac.StructItem.uint16(), MAX_CARS),
-  }, nil, REPLAY_DIVISOR)
-  if ok then RS = res else rsErr = tostring(res) end
-end
-
-local function packFlags(S)
-  local f = 0x8000
-  if S.otActive then f = f + 1 end
-  if S.otPending then f = f + 2 end
-  if S.boost then f = f + 4 end
-  if S.charge then f = f + 8 end
-  if S.pl then f = f + 16 end
-  if S.plp then f = f + 32 end
-  f = f + bit.lshift(clampInt(S.latch, 0, 3), 6)
-  if S.smActive then f = f + 256 end
-  if S.wingF then f = f + 512 end
-  if S.wingR then f = f + 1024 end
-  if S.engineRunning then f = f + 2048 end
-  if S.pitLimiter then f = f + 4096 end
-  return f
-end
-
-local recS = {}
+local data = require('hud_data').new(ac, sim, cfg)
+local can, RS, rsErr = data.can, data.RS, data.rsErr
+local readLive, readReplay = data.readLive, data.readReplay
 local recordedCars = 0
-
-local function recordAll()
-  if not RS or sim.isReplayActive or not cfg.recordReplay then return end
-  local n = math.min(sim.carsCount, MAX_CARS)
-  recordedCars = 0
-  for i = 0, n - 1 do
-    local S = recS
-    clearSnap(S)
-    local ok = readLive(S, i)
-    if ok and S.full then
-      RS.f26soc[i] = u8((S.soc or 0) * 250)
-      RS.f26kw[i] = i8(S.kw / 3)
-      RS.f26deploy[i] = u8(S.deploy * 20)
-      RS.f26regen[i] = u8(S.regen * 20)
-      RS.f26regenLimit[i] = u8(S.regenLimit * 20)
-      RS.f26esoc[i] = u8((S.esoc or 0) * 10)
-      RS.f26cap[i] = u8(S.cap / 2)
-      RS.f26flags[i] = packFlags(S)
-      RS.f26pack[i] = clampInt(S.strat - 1, 0, 15)
-        + bit.lshift(clampInt(S.split, 0, 31), 4)
-        + bit.lshift(clampInt(S.puMode, 0, 15), 9)
-      recordedCars = recordedCars + 1
-    else
-      RS.f26flags[i] = 0
-    end
-  end
-end
-
-local function readReplay(S, idx)
-  local car = ac.getCar(idx)
-  if not car then return false end
-  readNative(S, car)
-  S.carID = ac.getCarID(idx)
-  S.fa26 = isFA26(S.carID)
-  S.full = false
-  if RS and idx < MAX_CARS then
-    local f = RS.f26flags[idx]
-    if bit.band(f, 0x8000) ~= 0 then
-      S.soc = RS.f26soc[idx] / 250
-      S.kw = RS.f26kw[idx] * 3
-      S.deploy = RS.f26deploy[idx] / 20
-      S.regen = RS.f26regen[idx] / 20
-      S.regenLimit = RS.f26regenLimit[idx] / 20
-      S.esoc = RS.f26esoc[idx] / 10
-      S.cap = RS.f26cap[idx] * 2
-      local p = RS.f26pack[idx]
-      S.strat = bit.band(p, 15) + 1
-      S.split = bit.band(bit.rshift(p, 4), 31)
-      S.puMode = bit.band(bit.rshift(p, 9), 15)
-      S.otActive = bit.band(f, 1) ~= 0
-      S.otPending = bit.band(f, 2) ~= 0
-      S.boost = bit.band(f, 4) ~= 0
-      S.charge = bit.band(f, 8) ~= 0
-      S.pl = bit.band(f, 16) ~= 0
-      S.plp = bit.band(f, 32) ~= 0
-      S.latch = bit.band(bit.rshift(f, 6), 3)
-      S.smActive = bit.band(f, 256) ~= 0
-      -- wing flaps: prefer the recorded bits, AC's own extra-switch replay is the fallback
-      S.wingF = bit.band(f, 512) ~= 0 or S.wingF
-      S.wingR = bit.band(f, 1024) ~= 0 or S.wingR
-      S.engineRunning = bit.band(f, 2048) ~= 0
-      S.pitLimiter = bit.band(f, 4096) ~= 0
-      S.full = true
-      S.source = 'replay: app stream, car ' .. idx
-      return true
-    end
-  end
-  S.source = 'replay: no app data for this car (native only)'
-  return true
-end
+local function clearSnap(S) for k in pairs(S) do S[k] = nil end end
 
 -- ---------------------------------------------------------------------------------------------
 -- target car + per-frame state
@@ -404,7 +191,6 @@ end
 
 local view = {}
 local diag = { aiProbe = 'n/a', nativeSocReplay = 'n/a', lastLog = -10, lastProbe = -10 }
-
 -- Persistent diagnostics file: the CSP log is overwritten on every launch, this one accumulates
 -- (Documents\Assetto Corsa\logs\f1_2026_speedometer_hud_diag.log, trimmed to the last DIAG_MAX_LINES).
 local DIAG_MAX_LINES = 600
@@ -454,8 +240,40 @@ local function refreshView()
   local ok
   if sim.isReplayActive then ok = readReplay(view, idx) else ok = readLive(view, idx) end
   if not ok then
+    view.kind, view.valid = 'drs', {}
     view.source = 'no car'
     view.speed, view.rpm, view.gear, view.gas, view.brake = 0, 0, 0, 0, 0
+  end
+end
+
+-- Diagnostics only, never used for drawing: counts short holes in recorded native history during
+-- forward playback (available, missing for at most REPLAY_GAP_MAX_FRAMES frames, available again).
+-- Recordings made with the current writer should report 0.
+local REPLAY_GAP_MAX_FRAMES, REPLAY_STEP_MAX_FRAMES = 10, 8
+local replayGaps = { count = 0, lastFrame = -1 }
+local function resetReplayGapTracking()
+  replayGaps.seen, replayGaps.missingFrom, replayGaps.frame = false, nil, nil
+end
+if type(ac.onReplay) == 'function' then pcall(ac.onReplay, resetReplayGapTracking) end
+
+local function trackReplayGaps()
+  local g, frame = replayGaps, sim.replayCurrentFrame
+  if not sim.isReplayActive or type(frame) ~= 'number' or (view.kind ~= 'vanilla' and view.kind ~= 'drs') then
+    resetReplayGapTracking()
+    return
+  end
+  if g.index ~= view.index or g.carID ~= view.carID
+      or (g.frame ~= nil and (frame < g.frame or frame - g.frame > REPLAY_STEP_MAX_FRAMES)) then
+    resetReplayGapTracking()
+  end
+  g.index, g.carID, g.frame = view.index, view.carID, frame
+  if valid(view, 'soc') or valid(view, 'drsActive') then
+    if g.seen and g.missingFrom ~= nil and frame - g.missingFrom <= REPLAY_GAP_MAX_FRAMES then
+      g.count, g.lastFrame = g.count + 1, g.missingFrom
+    end
+    g.seen, g.missingFrom = true, nil
+  elseif g.seen and g.missingFrom == nil then
+    g.missingFrom = frame
   end
 end
 
@@ -463,22 +281,13 @@ local function runDiagnostics()
   local now = os.clock()
   if now - diag.lastProbe > 2 then
     diag.lastProbe = now
-    -- AI private channels: read car 1 (first non-player car) directly from its physics state
-    if not sim.isReplayActive and sim.carsCount > 1 and can.inputs then
-      local c1 = ac.getCarPhysics(1)
-      local id1 = ac.getCarID(1)
-      if c1 and isFA26(id1) then
-        local kw = rd(c1, 'rearMotorPowerKW') or 0
-        local dep = rd(c1, 'kersDeployMJ') or 0
-        local puT = rd(c1, 'puTemperature') or 0
-        local eng = rd(c1, 'isEngineRunning') or 0
-        local car1 = ac.getCar(1)
-        local soc1 = car1 and car1.kersCharge or -1
-        diag.aiProbe = string.format('car 1 %s: kW %.0f, deploy %.2f MJ, PU %.0f C, engine %d, native SoC %.2f%s',
-          ac.getDriverName(1) or '?', kw, dep, puT, math.floor(eng + 0.5), soc1,
-          (kw == 0 and dep == 0 and puT == 0 and eng == 0) and '  <- all zero: AI channels NOT populated' or '  <- AI channels OK')
-      else
-        diag.aiProbe = 'car 1 is not an FA26 or has no physics state'
+    -- Read the other car through its own adapter; never interpret a mixed grid as Pro CAN.
+    diag.aiProbe, diag.nativeSocReplay = 'n/a', 'n/a'
+    if not sim.isReplayActive and sim.carsCount > 1 then
+      local other = {}
+      if readLive(other, 1) then
+        diag.aiProbe = string.format('car 1 %s: %s, soc=%s kW=%s',
+          tostring(other.name), tostring(other.source), tostring(other.soc), tostring(other.kw))
       end
     elseif sim.isReplayActive then
       local car = ac.getCar(targetCar())
@@ -494,10 +303,10 @@ local function runDiagnostics()
     if sim.isReplayActive then canState = 'n/a (replay)'
     elseif can.inputs then canState = string.format('ok (%d ch)', can.count)
     else canState = 'none: ' .. tostring(can.err) end
-    local l1 = string.format('%s src=%s | car=%s (%s) | CAN=%s | session=%s replay=%s stream=%s recorded=%d | %s | %s',
+    local l1 = string.format('%s src=%s | car=%s (%s) | CAN=%s | session=%s replay=%s stream=%s recorded=%d | replayGaps=%d@%s | %s | %s',
       TAG, tostring(view.source), tostring(view.index), tostring(view.name), canState,
       tostring(sim.raceSessionType), tostring(sim.isReplayActive), RS and 'ok' or ('ERR ' .. tostring(rsErr)), recordedCars,
-      diag.aiProbe, diag.nativeSocReplay)
+      replayGaps.count, tostring(replayGaps.lastFrame), diag.aiProbe, diag.nativeSocReplay)
     ac.log(l1)
     diagFileAppend(l1)
     if view.full then
@@ -506,6 +315,17 @@ local function runDiagnostics()
         tostring(view.strat), tostring(view.split), tostring(view.puMode), tostring(view.otActive), tostring(view.otPending),
         tostring(view.boost), tostring(view.charge), tostring(view.pl), tostring(view.plp), tostring(view.latch), tostring(view.smActive),
         tostring(view.wingF), tostring(view.wingR), view.speed or 0, tostring(view.gear), view.gas or 0)
+      ac.log(l2)
+      diagFileAppend(l2)
+    elseif view.kind == 'vanilla' or view.kind == 'drs' then
+      local gaps = data.recordingGaps or {}
+      local l2 = string.format('%s native kind=%s soc=%s boost=%s strategy=%s recovering=%s drs=%s/%s/%s sm=%s/%s valid=%s/%s/%s/%s/%s nativeStream=%s recordedNative=%d/%d emptyNative=%d lastEmpty=%s:%s',
+        TAG, tostring(view.kind), tostring(view.soc), tostring(view.boost), tostring(view.strategyName),
+        tostring(view.recovering), tostring(view.drsPresent), tostring(view.drsAvailable), tostring(view.drsActive),
+        tostring(view.smAvailable), tostring(view.smActive), tostring(valid(view, 'soc')), tostring(valid(view, 'boost')),
+        tostring(valid(view, 'strategy')), tostring(valid(view, 'recovering')), tostring(valid(view, 'drsActive')),
+        data.VRS and 'ok' or tostring(data.vrsErr), data.recordedVanilla or 0, data.recordedDRS or 0,
+        gaps.totalNativeEmpty or 0, tostring(gaps.lastNativeIndex or -1), tostring(gaps.lastNativeReason or 'none'))
       ac.log(l2)
       diagFileAppend(l2)
     end
@@ -533,8 +353,9 @@ end
 function script.update(dt)
   if btnPanel:pressed() then cfg.showPanel = not cfg.showPanel end
   if btnLock:pressed() then cfg.lockPlayer = not cfg.lockPlayer end
-  recordAll()
+  recordedCars = data.recordAll()
   refreshView()
+  trackReplayGaps()
   if cfg.diagnostics then runDiagnostics() end
 end
 
@@ -612,8 +433,15 @@ local function pill(font, x, y, w, h, fill, border, label, size, txtColor, round
 end
 
 local function smState(S)
-  if S.wingF or S.wingR or S.smActive then return 'on' end
-  if not S.full or (S.speed or 0) < 1 then return 'off' end
+  if S.kind == 'vanilla' then
+    if valid(S, 'smActive') and S.smActive then return 'on' end
+    if valid(S, 'smAvailable') and S.smAvailable then return 'avail' end
+    return 'off'
+  end
+  if S.kind ~= 'pro' then return 'off' end
+  if (valid(S, 'wingF') and S.wingF) or (valid(S, 'wingR') and S.wingR)
+    or (valid(S, 'smActive') and S.smActive) then return 'on' end
+  if not valid(S, 'latch') or (S.speed or 0) < 1 then return 'off' end
   if S.latch == 2 then return 'pre' end
   if S.latch == 1 then return 'avail' end
   if S.latch == 3 then return 'late' end
@@ -661,16 +489,22 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   -- Width budget (v0.9): the throttle / brake track start caps (r 13.5 at (103.2, 269.1) and (236.8, 269.1))
   -- narrow the free channel to x 116.7-223.3 at y 269, so the cluster is 96 wide (x 122-218) to clear
   -- both caps by >= 5 units on every row; v0.8's 120-wide cluster overlapped them (seen in-game).
-  local st = SM_STYLE[smState(S)]
-  pill(fontB, ox + 122 * s, oy + 240 * s, 45 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
-  local otFill, otBorder, otTxt = C.track, nil, C.dim
-  if S.full and S.otActive then otFill, otTxt = C.green, C.white
-  elseif S.full and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
-  pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
-  -- Boost = the driver's manual max-deploy override (isHybridBoostActive, the dash's "BO" box). Lit in the
-  -- boost colour only while pressed, dark otherwise so the slot is always visible; same width as SM + OT.
-  local boostOn = S.full and S.boost
-  pill(fontB, ox + 122 * s, oy + 270 * s, 96 * s, 20 * s, boostOn and C.boost or C.track, nil, 'BOOST', 13 * s, boostOn and C.white or C.dim, 6 * s)
+  if S.kind ~= 'pro' and S.kind ~= 'vanilla' then
+    local on = valid(S, 'drsActive') and S.drsActive == true
+    pill(fontB, ox + 122 * s, oy + 251 * s, 96 * s, 28 * s,
+      on and C.green or C.track, nil, 'DRS', 16 * s, on and C.white or C.dim, 6 * s)
+  else
+    local st = SM_STYLE[smState(S)]
+    pill(fontB, ox + 122 * s, oy + 240 * s, 45 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
+    local otFill, otBorder, otTxt = C.track, nil, C.dim
+    if valid(S, 'otActive') and S.otActive then otFill, otTxt = C.green, C.white
+    elseif valid(S, 'otPending') and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
+    pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
+    -- Both adapters expose only the manual command, never automatic deployment or estimated power.
+    local boostOn = valid(S, 'boost') and S.boost
+    pill(fontB, ox + 122 * s, oy + 270 * s, 96 * s, 20 * s, boostOn and C.boost or C.track, nil,
+      'BOOST', 13 * s, boostOn and C.white or C.dim, 6 * s)
+  end
 
   local g = S.gear or 0
   local gearStr = g == 0 and 'N' or (g < 0 and 'R' or tostring(g))
@@ -713,20 +547,23 @@ local function drawSideBars(S, ox, oy, s, fontB, fontR)
   local rlab = rx + (BAR_W * 0.5 - BAR_LABEL_W * 0.5) * s
   local ty1, ty2 = oy + (BAR_TOP + BAR_H + 4) * s, oy + (BAR_TOP + BAR_H + 20) * s
 
-  if S.full and S.soc then
+  if valid(S, 'soc') then
     local soc = clamp(S.soc, 0, 1)
     local col = socColor(soc)
-    local usable = S.esoc and math.max(S.esoc - ES_FLOOR_MJ, 0) or (soc * ES_USABLE_MJ)
     vbar(lx, by, BAR_W * s, bh, soc, col, s)
     text(fontB, fmtInt(soc * 100) .. '%', 14 * s, llab, ty1, BAR_LABEL_W * s, 16 * s, col)
-    text(fontR, string.format('%.2f MJ', usable), 11 * s, llab, ty2, BAR_LABEL_W * s, 14 * s, C.grey)
+    if S.kind == 'pro' then
+      local usable = valid(S, 'esoc') and math.max(S.esoc - ES_FLOOR_MJ, 0) or (soc * ES_USABLE_MJ)
+      text(fontR, string.format('%.2f MJ', usable), 11 * s, llab, ty2, BAR_LABEL_W * s, 14 * s, C.grey)
+    end
   else
     vbar(lx, by, BAR_W * s, bh, 0, C.green, s)
     text(fontB, '--', 14 * s, llab, ty1, BAR_LABEL_W * s, 16 * s, C.dim)
   end
 
-  if S.full then
-    local lim = S.regenLimit or 0
+  if S.kind ~= 'pro' then return end
+  if validAll(S, 'regen', 'regenLimit') then
+    local lim = S.regenLimit
     local regen = S.regen or 0
     vbar(rx, by, BAR_W * s, bh, lim > 0.05 and regen / lim or 0, C.purple, s)
     text(fontB, string.format('%.1f', regen), 14 * s, rlab, ty1, BAR_LABEL_W * s, 16 * s, C.purple)
@@ -753,13 +590,13 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   label(L('battery'), 8)
   local bx, by, bw, bh = lx, py + 28 * s, 180 * s, 14 * s
   ui.drawRectFilled(vec2(bx, by), vec2(bx + bw, by + bh), C.barTrack, 3 * s)
-  if S.full and S.soc then
+  if valid(S, 'soc') then
     local soc = clamp(S.soc, 0, 1)
     local col = soc > 0.5 and C.green or (soc > 0.25 and C.yellow or C.red)
     if soc > 0.002 then ui.drawRectFilled(vec2(bx, by), vec2(bx + bw * soc, by + bh), col, 3 * s) end
     -- usable energy: the 2026 ES has a 4 MJ usable window; VRC models it as the top 4 MJ of an 8 MJ store
     -- (kersChargeESOC = 4 + 4 x kersCharge, verified from the 2026-09-10 logs). Raw ESOC stays in diagnostics.
-    local usable = S.esoc and math.max(S.esoc - ES_FLOOR_MJ, 0) or (soc * ES_USABLE_MJ)
+    local usable = valid(S, 'esoc') and math.max(S.esoc - ES_FLOOR_MJ, 0) or (soc * ES_USABLE_MJ)
     valueRight(string.format('%s%%  %.2f / %.0f MJ', fmtInt(soc * 100), usable, ES_USABLE_MJ), 25)
   else
     valueRight('--', 25, C.dim)
@@ -770,8 +607,8 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   local mx, my, mw, mh = lx, py + 74 * s, 180 * s, 14 * s
   local mid = mx + mw * 0.5
   ui.drawRectFilled(vec2(mx, my), vec2(mx + mw, my + mh), C.barTrack, 3 * s)
-  if S.full then
-    local kw = S.kw or 0
+  if valid(S, 'kw') then
+    local kw = S.kw
     if kw > 1 then
       ui.drawRectFilled(vec2(mid, my), vec2(mid + mw * 0.5 * clamp(kw / KW_MAX, 0, 1), my + mh), C.green)
     elseif kw < -1 then
@@ -782,11 +619,13 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
     local cap = S.cap or 0
     local capColor = cap > 0 and C.yellow or C.orange
     local tx = mid + mw * 0.5 * clamp(cap / KW_MAX, -1, 1)
-    ui.drawRectFilled(vec2(tx - 1.5 * s, my - 3 * s), vec2(tx + 1.5 * s, my + mh + 3 * s), capColor)
+    if valid(S, 'cap') then
+      ui.drawRectFilled(vec2(tx - 1.5 * s, my - 3 * s), vec2(tx + 1.5 * s, my + mh + 3 * s), capColor)
+    end
     ui.drawRectFilled(vec2(mid - 1 * s, my - 2 * s), vec2(mid + 1 * s, my + mh + 2 * s), C.white)
     valueRight(string.format('%+d kW', math.floor(kw + 0.5)), 71)
     text(fontLR, L('harvest'), 11 * s, mx, my + 17 * s, 90 * s, 14 * s, C.dim, ui.Alignment.Start)
-    local capLabel = string.format(cap < 0 and L('clip') or L('cap'), fmtInt(cap))
+    local capLabel = valid(S, 'cap') and string.format(cap < 0 and L('clip') or L('cap'), fmtInt(cap)) or '--'
     text(fontLR, capLabel, 11 * s, mx + mw - 110 * s, my + 17 * s, 110 * s, 14 * s, capColor, ui.Alignment.End)
   else
     valueRight('--', 71, C.dim)
@@ -794,14 +633,15 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
 
   -- lap energy
   label(L('lapEnergy'), 112)
-  if S.full then
-    text(fontLB, string.format(L('deploy'), S.deploy or 0), 14 * s, lx, py + 130 * s, 130 * s, 18 * s, C.white, ui.Alignment.Start)
+  if valid(S, 'deploy') or valid(S, 'regen') then
+    text(fontLB, valid(S, 'deploy') and string.format(L('deploy'), S.deploy) or '--', 14 * s, lx, py + 130 * s, 130 * s, 18 * s, C.white, ui.Alignment.Start)
     local lim = S.regenLimit or 0
-    local regenStr = lim > 0.05 and string.format(L('regenLim'), S.regen or 0, lim) or string.format(L('regen'), S.regen or 0)
+    local regenStr = valid(S, 'regen') and (valid(S, 'regenLimit') and lim > 0.05
+      and string.format(L('regenLim'), S.regen, lim) or string.format(L('regen'), S.regen)) or '--'
     text(fontLB, regenStr, 14 * s, lx + 136 * s, py + 130 * s, cw - 136 * s, 18 * s, C.white, ui.Alignment.Start)
     local rx, ry, rw, rh = lx + 136 * s, py + 150 * s, cw - 136 * s, 6 * s
     ui.drawRectFilled(vec2(rx, ry), vec2(rx + rw, ry + rh), C.barTrack, 2 * s)
-    if lim > 0.05 then
+    if validAll(S, 'regen', 'regenLimit') and lim > 0.05 then
       local fr = clamp((S.regen or 0) / lim, 0, 1)
       if fr > 0.005 then ui.drawRectFilled(vec2(rx, ry), vec2(rx + rw * fr, ry + rh), C.purple, 2 * s) end
     end
@@ -811,10 +651,10 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
 
   -- strategy
   label(L('strategy'), 170)
-  if S.full then
+  if valid(S, 'strat') or valid(S, 'split') or valid(S, 'puMode') then
     local pm = math.floor((S.puMode or 0) + 0.5)
-    local pmName = PU_MODE_NAMES[pm] or ('#' .. fmtInt(pm))
-    text(fontLB, string.format(L('stratSplit'), fmtInt(S.strat), fmtInt(S.split)), 14 * s, lx, py + 188 * s, 150 * s, 18 * s, C.white, ui.Alignment.Start)
+    local pmName = valid(S, 'puMode') and (PU_MODE_NAMES[pm] or ('#' .. fmtInt(pm))) or '--'
+    text(fontLB, string.format(L('stratSplit'), valid(S, 'strat') and fmtInt(S.strat) or '--', valid(S, 'split') and fmtInt(S.split) or '--'), 14 * s, lx, py + 188 * s, 150 * s, 18 * s, C.white, ui.Alignment.Start)
     text(fontB, 'PU ' .. pmName, 14 * s, lx + 156 * s, py + 188 * s, cw - 156 * s, 18 * s, pm == 11 and C.yellow or C.white, ui.Alignment.Start)
   else
     text(fontB, '--', 14 * s, lx, py + 188 * s, cw, 18 * s, C.dim, ui.Alignment.Start)
@@ -826,31 +666,61 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   local st = SM_STYLE[sm]
   local y1, y2, h = py + 240 * s, py + 268 * s, 22 * s
   pill(fontLB, lx, y1, 100 * s, h, sm ~= 'off' and st.fill or C.track, nil, L(SM_CHIP_KEY[sm]), 12 * s, sm ~= 'off' and st.txt or C.dim, 5 * s)
-  local otLabel = (S.full and S.otActive) and L('ot_active') or ((S.full and S.otPending) and L('ot_pending') or 'OT')
-  chip(fontLB, lx + 108 * s, y1, 84 * s, h, S.full and (S.otActive or S.otPending), S.otActive and C.green or C.cyan, otLabel, s, S.otActive and C.white or C.black)
-  chip(fontLB, lx + 200 * s, y1, 60 * s, h, S.full and S.boost, C.boost, L('boost'), s)
-  chip(fontLB, lx, y2, 64 * s, h, S.full and S.charge, C.blue, L('charge'), s)
-  chip(fontLB, lx + 72 * s, y2, 40 * s, h, S.full and S.pl, C.orange, 'PL', s)
-  chip(fontLB, lx + 120 * s, y2, 44 * s, h, S.full and S.plp, C.yellow, 'PLP', s, C.black)
-  chip(fontLB, lx + 172 * s, y2, 88 * s, h, S.full and S.pitLimiter, C.white, L('pitLimiter'), s, C.black)
+  local otLabel = (valid(S, 'otActive') and S.otActive) and L('ot_active') or ((valid(S, 'otPending') and S.otPending) and L('ot_pending') or 'OT')
+  chip(fontLB, lx + 108 * s, y1, 84 * s, h, ((valid(S, 'otActive') and S.otActive) or (valid(S, 'otPending') and S.otPending)), S.otActive and C.green or C.cyan, otLabel, s, S.otActive and C.white or C.black)
+  chip(fontLB, lx + 200 * s, y1, 60 * s, h, valid(S, 'boost') and S.boost, C.boost, L('boost'), s)
+  chip(fontLB, lx, y2, 64 * s, h, valid(S, 'charge') and S.charge, C.blue, L('charge'), s)
+  chip(fontLB, lx + 72 * s, y2, 40 * s, h, valid(S, 'pl') and S.pl, C.orange, 'PL', s)
+  chip(fontLB, lx + 120 * s, y2, 44 * s, h, valid(S, 'plp') and S.plp, C.yellow, 'PLP', s, C.black)
+  chip(fontLB, lx + 172 * s, y2, 88 * s, h, valid(S, 'pitLimiter') and S.pitLimiter, C.white, L('pitLimiter'), s, C.black)
 
   if cfg.diagnostics then
     text(fontR, string.format('%s  |  %s', tostring(S.name), tostring(S.source)), 11 * s, lx, py + 298 * s, cw, 16 * s, C.dim, ui.Alignment.Start)
   end
 end
 
+local VANILLA_PANEL_W = 248
+local function drawVanillaPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
+  local px, py, pw, ph = panelX, oy + 65 * s, VANILLA_PANEL_W * s, 210 * s
+  local lx, cw = px + 14 * s, pw - 28 * s
+  ui.drawRectFilled(vec2(px, py), vec2(px + pw, py + ph), C.panel, 10 * s)
+  text(fontLR, L('battery'), 12 * s, lx, py + 12 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
+  local soc = valid(S, 'soc') and clamp(S.soc, 0, 1) or nil
+  local col = soc and socColor(soc) or C.dim
+  text(fontB, soc and (fmtInt(soc * 100) .. '%') or '--', 18 * s, lx, py + 8 * s, cw, 24 * s, col, ui.Alignment.End)
+  local by, bh = py + 39 * s, 14 * s
+  ui.drawRectFilled(vec2(lx, by), vec2(lx + cw, by + bh), C.barTrack, 3 * s)
+  if soc and soc > 0.002 then ui.drawRectFilled(vec2(lx, by), vec2(lx + cw * soc, by + bh), col, 3 * s) end
+  text(fontLR, L('strategy'), 12 * s, lx, py + 72 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
+  text(fontB, valid(S, 'strategy') and S.strategyName or '--', 20 * s, lx, py + 91 * s, cw, 28 * s, C.white, ui.Alignment.Start)
+  local recoveryKnown = valid(S, 'recovering')
+  local recovering = recoveryKnown and S.recovering
+  chip(fontLB, lx, py + 144 * s, cw, 28 * s, recovering, C.purple,
+    recoveryKnown and L('recovering') or (L('recovering') .. ' --'), s)
+  if cfg.diagnostics then
+    text(fontR, tostring(S.source), 10 * s, lx, py + 185 * s, cw, 16 * s, C.dim, ui.Alignment.Start)
+  end
+end
+
 function script.windowMain(dt)
-  local s = cfg.scale
-  if s < 0.3 then s = 0.3 end
+  local s = clamp(cfg.scale, 0.3, 2.5)
   local fontB, fontR, fontLB, fontLR, fontM = getFonts()
   local o = ui.getCursor()
   local ox, oy = o.x, o.y
-  local leftW = cfg.showBars and BARS_TOTAL_W or DIAL_W
-  local dialOx = ox + (cfg.showBars and DIAL_INSET or 0) * s
+  local pro, vanilla = view.kind == 'pro', view.kind == 'vanilla'
+  local bars = cfg.showBars and (pro or vanilla)
+  local panel = cfg.showPanel and (pro or vanilla)
+  local leftW = bars and (pro and BARS_TOTAL_W or (DIAL_INSET + DIAL_W + BAR_MARGIN)) or DIAL_W
+  local panelW = vanilla and VANILLA_PANEL_W or PANEL_W
+  local dialOx = ox + (bars and DIAL_INSET or 0) * s
   drawDial(view, dialOx, oy, s, fontB, fontR, fontM)
-  if cfg.showBars then drawSideBars(view, ox, oy, s, fontB, fontR) end
-  if cfg.showPanel then drawPanel(view, ox + (leftW + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR) end
-  ui.dummy(vec2((leftW + (cfg.showPanel and (PANEL_GAP + PANEL_W) or 0)) * s, 340 * s))
+  if bars then drawSideBars(view, ox, oy, s, fontB, fontR) end
+  if panel then
+    local draw = vanilla and drawVanillaPanel or drawPanel
+    draw(view, ox + (leftW + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR)
+  end
+  ui.setCursor(o)
+  ui.dummy(vec2((leftW + (panel and (PANEL_GAP + panelW) or 0)) * s, 340 * s))
 end
 
 function script.windowSettings(dt)
@@ -884,6 +754,8 @@ function script.windowSettings(dt)
   ui.text(RS and string.format(L('streamOk'), MAX_CARS, REPLAY_DIVISOR, ordinal, MAX_CARS * 11)
     or string.format(L('streamErr'), tostring(rsErr)))
   ui.text(string.format(L('recorded'), recordedCars))
+  ui.text(data.VRS and (cfg.lang == 'zh' and '原生状态回放流：正常' or 'Native-state replay stream: ready')
+    or ((cfg.lang == 'zh' and '原生状态回放流：' or 'Native-state replay stream: ') .. tostring(data.vrsErr)))
 
   ui.header(L('diagnostics'))
   if ui.checkbox(L('diagPanel'), cfg.diagnostics) then cfg.diagnostics = not cfg.diagnostics end

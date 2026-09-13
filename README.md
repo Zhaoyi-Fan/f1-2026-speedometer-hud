@@ -2,9 +2,13 @@
 
 [简体中文](README.zh-CN.md)
 
-A broadcast-style speedometer for Assetto Corsa, with energy readouts for the VRC Formula Alpha
-2026 Pro. Shows speed, driver inputs, battery charge, MGU-K power and the status of Straight Mode,
-Overtake and Boost. The HUD follows the camera car and can display energy data saved in replays.
+A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
+appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
+
+Version **0.9.2** adds the vehicle compatibility changes. See
+[compatibility and validation](docs/COMPATIBILITY.md) for the tested boundaries.
+The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
+cut and the downshift auto-blip ([known issues](docs/KNOWN-ISSUES.md)).
 
 ![demo](docs/demo.gif)
 
@@ -12,7 +16,21 @@ Overtake and Boost. The HUD follows the camera car and can display energy data s
 
 The app runs in Custom Shaders Patch (CSP). It combines a MultiViewer-style dial with the car's
 energy telemetry, so you can monitor deployment and harvesting while driving or watching a replay.
-It supports AI cars as well as the player's car and does not modify car or track files.
+It reads the selected car's available data and does not modify car or track files. AI and
+remote cars can expose fewer fields; missing data is never replaced by the player's controls.
+
+## Vehicle compatibility
+
+| Car | Display | Energy and replay |
+| --- | --- | --- |
+| FA26 Pro, exact ID `vrc_formula_alpha_2026_csp` | SM / OT / BOOST | Full Pro panel and original Pro replay stream |
+| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST; SM and recovery require validated signals |
+| FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; exact FA25 CSP gets a small DRS recording when native replay history is unavailable |
+| Cars without DRS | The same DRS indicator, always dark | No energy panel |
+
+The **car selects the layout**. Track zones and rules affect availability, and actual reported
+state controls activation. A FA25 on a 2026 track still shows DRS; a Pro without CAN data still
+uses the Pro layout. Unknown state leaves indicators dark and numeric readings as `--`.
 
 ## Display
 
@@ -20,7 +38,7 @@ It supports AI cars as well as the player's car and does not modify car or track
 The speed scale runs from 0 to 360 km/h in steps of 60; above 360, the arc stays full while the
 central number continues to show the actual speed. Curved `THROTTLE` and `BRAKE` labels identify
 the input arcs. The layout and colours follow the MultiViewer style and are drawn in code.
-Three indicators show the 2026 systems:
+For **FA26 Pro**, three indicators show the 2026 systems:
 
 | Indicator | Dark | Colour states |
 | --- | --- | --- |
@@ -28,11 +46,11 @@ Three indicators show the 2026 systems:
 | `OT` Overtake | not available | white outline = granted, waiting for the activation line · green = active this lap |
 | `BOOST` | off | magenta while the Boost button is held / toggled |
 
-**Side bars:** usable battery charge on the left, shown as a percentage and in MJ; energy harvested
+**Pro side bars:** usable battery charge on the left, shown as a percentage and in MJ; energy harvested
 this lap on the right, shown against the lap limit. These bars can be hidden independently of the
 energy panel.
 
-**Energy panel:** can be shown or hidden in settings or with a bound key or wheel button.
+**Pro energy panel:** can be shown or hidden in settings or with a bound key or wheel button.
 
 - Battery: usable energy as a bar, `%` and `MJ / 4 MJ`.
 - MGU-K: live power, green when deploying and red when harvesting, with a tick at the current
@@ -43,6 +61,13 @@ energy panel.
   harvesting limit reported by the car. The limit varies by track and session; Overtake adds 0.5 MJ.
 - Strategy: `STRAT n`, the current deployment-map split, and the PU mode name.
 - Status chips: SM state, OT state, Boost, Charge mode, PL / PLP (power-limited states), pit limiter.
+
+**Native FA26** has a compact panel with battery percentage, the actual native deployment name
+and a recovery indicator once validated. Only the battery side bar is used. BOOST represents
+the native manual override command, not automatic deployment or guaranteed output power.
+Native SM uses only off / available / active; it has no Pro pre-latch or late state. OT stays
+dark. Recovery is distinct from Pro Charge / Anti mode. No Pro MJ capacity, kW estimate,
+lap-recovery quota, split or PU mode is assigned to this car.
 
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
@@ -72,16 +97,15 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 - Assetto Corsa with Custom Shaders Patch. The VRC Formula Alpha 2026 needs CSP
   0.3.0-preview542 or newer. The app was developed and tested on build 4116.
-- **VRC Formula Alpha 2026, Pro (CSP) version** (`vrc_formula_alpha_2026_csp`). The energy data
-  comes from that car's telemetry bus. With any other car the dial still works and the energy
-  panel shows `--`.
-- The app consists of a Lua script and a manifest. No separate DLL, SimHub or Python installation
+- Pro energy data requires **VRC Formula Alpha 2026 Pro**. Native FA26 and conventional DRS
+  use separate adapters; other manufacturers' custom 2026 systems are not supported.
+- The app consists of two Lua files and a manifest. No separate DLL, SimHub or Python installation
   is required.
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.1.zip` from the
-[v0.9.1 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.1)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.2.zip` from the
+[v0.9.2 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.2)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -89,10 +113,15 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.1**.
+replay and check that the settings window shows version **0.9.2**.
 
-**From source:** clone the repository and run `tools\deploy.ps1` (PowerShell), optionally
-with `-AcRoot "D:\path\to\assettocorsa"`.
+**From source:** close AC and run `tools\deploy.ps1 -AcRoot "D:\path\to\assettocorsa"
+-BackupRoot "D:\HUD-backups"` in PowerShell. The backup folder must be outside the repository
+and game installation. The script backs up and verifies only the three managed app files,
+retaining settings and unrelated files. If updating the temporary development-probe installation,
+add `-RetireNativeProbe` to back up and remove that one file. Historical CSV evidence is retained.
+To undo one installation, use the same script with `-AcRoot` and
+`-RestoreManifest "D:\HUD-backups\<deployment>\deployment.json"`.
 
 Then in game: open the CSP apps sidebar and enable **F1 2026 Speedometer HUD**. The HUD window
 has no background; hover it to get the title bar and drag it where you want it.
@@ -107,22 +136,32 @@ has no background; hover it to get the title bar and drag it where you want it.
   PLP, STRAT, PU, MGU-K, KMH, RPM and GEAR remain the same in both languages.
 - **Bindings**: two buttons you can bind to keys or wheel buttons, "toggle energy panel" and "lock
   to player car".
-- **Replay**: save energy data for up to 22 cars in replays (on by default).
+- **Replay**: record supported states for car slots 0–21 (on by default).
 - **Diagnostics**: data-source line under the panel, a diagnostics file, and a "log mode" checkbox
   that reveals the raw decoded values.
 
 ## Replays
 
-Assetto Corsa's standard replay data does not include battery charge or ERS telemetry. This HUD
-records a separate energy stream while it runs, with recording enabled. The stream supports
-22 cars and stores 11 bytes per car every second replay frame, adding roughly 13 MB per hour
-to the replay file.
+The original Pro stream is unchanged: 22 slots, 11 bytes per slot, every second replay frame.
+A separate native-state stream uses 22 slots at 6 bytes per slot each replay frame, including
+vehicle/slot identity and independent validity bits. It records native FA26 fields and only
+the necessary DRS state for the exact FA25 CSP model. Other conventional cars are not all
+assigned extra recording. Actual file growth depends on replay timing and compression.
 
 When that data is present, the HUD can show the recorded energy readings in saved and in-session
 replays. Other users with the app installed can also view the data in a shared replay.
 
-Older replays, or those recorded without the app's energy stream, still show speed, inputs and
-the Straight Mode wing state. The remaining energy readings show `--`.
+Old Pro replays retain the original stream reader and the Pro-only native H / I wing fallback.
+Old native FA26 samples did not restore battery, manual BOOST or deployment changes; absent
+valid app recording, these remain unknown. The tested FA25 old replays also did not restore
+native `drsActive`, so their DRS indicator stays dark without claiming a known closed wing.
+Reliable native replay support must be verified per car and field, not inferred from a returned
+false or zero. Installing the app does not add missing history to an existing replay.
+
+Disabling recording clears live write buffers. Playback never writes them; every read rebuilds
+the selected car's state, including pauses, seeks and camera changes. Sharing a replay needs no
+CSV files. The temporary CSV probe is not a product dependency; the limited diagnostics log and
+CSP settings storage are separate and remain available.
 
 ## Settings reference
 
@@ -135,14 +174,14 @@ the Straight Mode wing state. The remaining energy readings show `--`.
 | Lock to player car | off | also a bindable button |
 | Font / Chinese label font | Bahnschrift / Microsoft YaHei UI | any installed DirectWrite font |
 | Language | English | 简体中文 available |
-| Record energy data into replays | on | up to 22 cars |
-| Show data source on the panel + run probes | on | small grey line under the panel |
+| Record supported car states into replays | on | slots 0–21 |
+| Show data source and enable diagnostics | on | small grey line under the panel |
 | Write diagnostics to the CSP log every 5 s | on | `[F1-2026-HUD]` lines |
 | Show technical readout (log mode) | off | raw values in the settings window |
 
 ## Data sources
 
-In live sessions, speed, RPM, gear, throttle, brake, battery state and STRAT come from CSP's car state. The
+In live Pro sessions, speed, RPM, gear, throttle, brake, battery state and STRAT come from CSP's car state. The
 2026-specific channels (MGU-K power and cap, lap deploy / regen and the regen limit, deployment
 split, PU mode, Overtake, Boost, Charge, PL / PLP, Straight Mode latch and activation) come from
 the VRC car's telemetry bus, read at runtime through CSP's shared storage. No file of the car or
@@ -157,7 +196,8 @@ replay format are documented in [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md).
   `data.acd` in `content\cars\vrc_formula_alpha_2026_csp`. The car's physics script refuses to run
   with an unpacked data folder, preventing the car from starting and the HUD from receiving data.
   Move that folder out of the car directory and restart the session.
-- **Panel shows `--`**: the focused car is not an FA26 Pro, or the replay has no recorded energy data.
+- **A value shows `--`**: that field is missing, unvalidated, or was not recorded. The car's
+  layout remains stable. Conventional cars deliberately have no Pro energy panel.
 - **Chinese labels look wrong**: set a different Chinese label font in the settings.
 - **Diagnostics**: `Documents\Assetto Corsa\logs\f1_2026_speedometer_hud_diag.log` accumulates
   across launches; the CSP log gets the same lines tagged `[F1-2026-HUD]`.
@@ -165,9 +205,11 @@ replay format are documented in [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md).
 ## Limitations and planned features
 
 - Replays record up to 22 cars, with indices 0–21. Cars with index 22 or higher are not recorded.
-- Energy telemetry currently supports the FA26 Pro. The basic dial also works with other cars.
-- Planned additions include DRS indicators for older cars, distance to the next zone, per-lap
-  energy history and a label explaining the current power cap.
+- Native FA26 has a smaller, distinct feature set. Other manufacturers' custom 2026 mods and
+  equal telemetry coverage for online remote cars are not claimed.
+- Saved native-stream playback, mixed-camera operation and actual font rendering require the
+  in-game checks listed in [COMPATIBILITY.md](docs/COMPATIBILITY.md). Offline tests are not
+  a substitute for those checks.
 
 ## Credits and disclaimer
 

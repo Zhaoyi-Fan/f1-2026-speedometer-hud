@@ -2,6 +2,27 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
+## 0.9.2 — 2026-09-13
+
+- Kept the v0.9.1 dial and made the display follow the exact car being watched:
+  - **FA26 Pro** keeps the SM / OT / BOOST badges and the energy panel.
+  - The **standard VRC Formula Alpha 2026** gets a compact panel with battery %, deployment mode
+    (LOW / MEDIUM / HIGH / NODEPLOY) and recovery state, plus manual BOOST and Straight Mode.
+    OT is unsupported and stays dark.
+  - **Conventional cars** show one centred DRS indicator, always dark on cars without DRS.
+  - The H / I Straight Mode wing mapping now applies to Pro only.
+- Missing data now shows as missing instead of a false zero. Camera changes and seeks no longer
+  carry over another car's state.
+- New replays record the standard FA26's battery, deployment, BOOST, recovery and DRS state, and
+  the FA25 CSP's DRS state, in a separate 132-byte stream. The FA26 Pro replay stream is
+  unchanged, so existing Pro replays still play back.
+- The periodic diagnostics now report short gaps in replayed data (`replayGaps`).
+- The source deployment script now backs up, installs and verifies only the app's own files, and
+  can roll back an installation. Adapter/replay and UI tests were added.
+- The throttle arc shows AC's physics throttle: with the automatic gearbox it dips briefly on
+  upshifts, and downshift auto-blips raise it. Manual upshifts stay steady. See
+  [known issues](docs/KNOWN-ISSUES.md) and [compatibility notes](docs/COMPATIBILITY.md).
+
 ## 0.9.1 — 2026-09-12
 
 - Changed the outer arc to 0–360 km/h, with 14-unit speed labels every 60 km/h and 180 at the top.

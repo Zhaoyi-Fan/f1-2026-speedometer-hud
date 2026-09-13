@@ -1,24 +1,60 @@
 # Data contract
 
-This document describes the telemetry fields used by the HUD and their replay encoding.
-The reference setup is VRC Formula Alpha 2026 Pro V1.0 with CSP build 4116, tested in-game
-in September 2026.
+This document describes version 0.9.2 (vehicle compatibility) and the immutable v0.9.1 Pro
+replay contract. Reference runtime: CSP build 4116. Actual validation and outstanding in-game
+checks are recorded in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Sources per mode
 
-| Mode | Dial (speed, RPM, gear, throttle, brake) | Energy panel |
+| Mode | Dial (speed, RPM, gear, throttle, brake) | State and energy |
 | --- | --- | --- |
 | Live, FA26 Pro | `ac.getCar(i)` | VRC telemetry bus (below); battery = `car.kersCharge`; STRAT = `car.mgukDelivery + 1` |
-| Live, other car | `ac.getCar(i)` | `--` |
-| Replay recorded with the app running | AC's own replay | the app's replay stream (below) |
-| Replay recorded without the app | AC's own replay | `--`; the SM badge still works from the wing extra switches H / I, which AC records |
+| Live, exact native FA26 | `ac.getCar(i)` | Validated native fields below; compact panel |
+| Live, conventional car | `ac.getCar(i)` | Native DRS only; no energy panel |
+| Replay, exact Pro | AC's own replay | Original Pro stream; H / I only when that stream is absent |
+| Replay, exact native FA26 | AC's own replay | Native-state stream, independently valid fields; no unverified native false/zero fallback |
+| Replay, exact FA25 CSP | AC's own replay | Native-state DRS recording if present; tested native history is unreliable |
+| Replay, other conventional car | AC's own replay | Native DRS requires separate model/field verification; currently unknown/dark |
 
 The car index is the camera-focused car (`sim.focusedCar`, then `sim.closelyFocusedCar`, then 0),
 or 0 when "lock to player car" is on.
 
+Exact IDs are `vrc_formula_alpha_2026_csp` (Pro), `vrc_formula_alpha_2026` (native FA26)
+and `vrc_formula_alpha_2025_csp` (the conventional model receiving supplemental DRS recording).
+Unrecognised IDs use the conventional layout; prefixes, model year and track names are not
+evidence of Pro CAN compatibility. There is no capability expansion for other 2026 mods.
+
+Every snapshot is cleared before reading. `valid[field]` distinguishes usable false/zero from
+missing values; `supported[field]` can distinguish known absence from unknown capability.
+`full` identifies the Pro data path only and must never gate every field in the UI.
+Live native values require physics availability, matching car index, appropriate capability,
+type and range. `physicsAvailable` alone does not validate replay fields. Missing or disconnected
+cars, unavailable getters and mismatched indices are handled without retaining the previous view.
+
+## Pedal arcs and recovery display
+
+The throttle and brake arcs draw `car.gas` and `car.brake` from the current update, and the native
+FA26 recovery chip draws the current `recovering` state. Nothing is smoothed, delayed or held.
+
+`car.gas` is AC's physics throttle after gearbox assists, not the driver's pedal. Replays store
+both values per car frame, but CSP exposes only the physics value, interpolated between 15 ms
+replay frames. The arc therefore shows two assists:
+
+- the automatic gearbox cuts the throttle to 0 for one or two replay frames on each upshift
+  (`[AUTO_SHIFTER] GAS_CUTOFF_TIME`); manual upshifts do not cut it;
+- auto-blip raises the throttle to about 94 % for 75–90 ms on each downshift while the pedal is
+  released, which also interrupts native recovery for that time.
+
+This is intended: the dial reports what the car's throttle actually did.
+
+The periodic diagnostics line reports `replayGaps=<count>@<frame>`: holes of up to 10 replay
+frames in recorded native history during forward playback. The count restarts tracking after
+replay jumps, backward or large forward steps and car changes. Recordings made with the current
+writer report 0. The counter never affects drawing.
+
 ## VRC telemetry bus
 
-The car's physics script publishes a channel map with `ac.store('<carID>_CAN', …)`: a stringified
+Only the exact Pro adapter reads the channel map published with `ac.store('<carID>_CAN', …)`: a stringified
 table whose `inputs` entry maps channel names to `{ index, isBoolean }`. The app parses it once per
 session and reads `ac.getCarPhysics(i).scriptControllerInputs[index]` for the selected car,
 including AI cars. Channel indices come from the map. It becomes available a few seconds after
@@ -50,9 +86,35 @@ Native CSP fields used: `speedKmh`, `rpm`, `gear`, `gas`, `brake`, `kersCharge` 
 
 When the wings are open (`drsMode` or either extra switch), the indicator is green. Otherwise,
 latch 2 is blue, latch 1 is white and latch 3 is yellow; all other values leave it dark.
-Below 1 km/h it stays dark, matching the steering wheel LEDs.
+The latch colours are suppressed below 1 km/h; a valid open wing retains the previous active
+precedence. Each source must be valid. Recorded false takes precedence over the native switches;
+native H / I is used only when the Pro stream is absent, never on FA25 or native FA26.
 
-## Replay stream
+## Native FA26 and conventional DRS
+
+| Field | Source | Meaning and validation |
+| --- | --- | --- |
+| Battery | `kersCharge`, range 0–1, with `kersPresent` | Percentage only; no Pro MJ conversion |
+| Manual BOOST | `kersButtonPressed`, with `kersHasButtonOverride` and `kersPresent` | Manual command; never inferred from `kersInput` or power |
+| Deployment | `mgukDelivery`, `mgukDeliveryCount`, `ac.getMGUKDeliveryName(carIndex, programIndex)` | Native name; verified contract indices 0–3 = LOW / MEDIUM / HIGH / NODEPLOY |
+| Recovery | `kersCharging`, with `kersPresent` | Native recovery state, corroborated by live SoC increases; not net battery power or Pro Charge / Anti |
+| DRS capability | `drsPresent` | Known false forces available/active false during trusted live reading |
+| Availability | `drsAvailable` | Separate from actual activation and does not imply a track-rule implementation by the HUD |
+| Activation | `drsActive` | Native FA26 SM or conventional DRS; rear-wing movement and live transitions verified for native FA26 |
+
+Native FA26 SM has only off / available / on states. It does not reuse the Pro blue/yellow latch
+states or H / I. OT is unsupported and dark. Its recovery, SM, battery, BOOST and deployment
+paths were validated from private in-game sampling in September 2026; the source does not include
+those samples or any commercial car files. The car's observed tail-wing opening is not a claim
+of independently verified front-wing actuation.
+
+Sampled FA25 native replay `drsActive` stayed false and `drsAvailable` stayed true while live
+samples changed. Old native FA26 saved replays similarly lost battery, BOOST and deployment
+history; in-session preview could freeze the last live values. The replay reader therefore
+does not trust these defaults, even if `physicsAvailable` is true. Other conventional cars
+are not automatically given extra recording or declared verified by those FA25 results.
+
+## Original Pro replay stream (unchanged)
 
 The app uses `ac.ReplayStream` to record energy data every second replay frame during live
 sessions, when recording is enabled. There are 22 car slots at 11 bytes per car (242 bytes per
@@ -69,15 +131,60 @@ replay compatibility.
 | `f26flags` | uint16 | bit 0 OT active, 1 OT pending, 2 boost, 3 charge, 4 PL, 5 PLP, 6-7 SM latch, 8 SM active, 9 wing F, 10 wing R, 11 engine running, 12 pit limiter, 15 slot recorded |
 | `f26pack` | uint16 | bits 0-3 STRAT − 1, 4-8 split, 9-12 PU mode |
 
-If bit 15 is unset, the slot is treated as missing data and the HUD shows `--`. Cars with index
-22 or higher are not recorded. Assetto Corsa's native replay does not contain `kersCharge` or
-`kersInput`, but does record the extra switches. These provide the SM wing state when the
-app's energy stream is absent.
+If bit 15 is unset, the slot is missing. The old stream has no per-field validity bitmap, so
+new live recording writes that bit only when all fields required by this old encoding exist.
+Partial live Pro data can still be displayed field by field. Historical recorded slots retain
+their original interpretation; old writer defaults cannot be retrospectively corrected.
+
+The original unsigned `f26cap` clamps negative live caps to zero. This existing limitation is
+preserved for byte compatibility: a historical zero cap cannot distinguish blocked deployment
+from a negative super-clipping cap. Live signed cap display remains intact.
+
+## Native-state stream, schema 1
+
+This is an independent stream: **22 slots × 6 bytes = 132 bytes**, divisor **1**. Its identity
+is the exact layout below. The Pro layout is never enlarged or reused for native cars.
+
+| Field | Array element | Encoding |
+| --- | --- | --- |
+| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; 0 = absent |
+| `f26n1valid` | uint8 | bit 0 SoC, 1 BOOST, 2 strategy, 3 recovery, 4 DRS present, 5 available, 6 active |
+| `f26n1state` | uint8 | bit 0 BOOST, 1 recovery, 2 DRS present, 3 available, 4 active |
+| `f26n1soc` | uint8 | SoC × 250, nearest integer, range 0–250; max error 0.2 percentage points |
+| `f26n1strategy` | uint8 | 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY |
+
+Each field is an array of length 22. The owner embeds the schema/car family and slot; playback
+requires an exact expected owner for the selected car ID and index. A valid false or zero is
+authoritative; native defaults never overwrite it. Strategy is recorded only when the native
+API name matches the four-name contract. A different name can display live but is not silently
+recorded as a different strategy. FA25 slots only use the DRS subset.
+
+Integers are intentional: the official SDK struct builder gives these raw integer items no
+`replayType`, and its replay interpolation map only includes items having that metadata. Packed
+booleans and strategy indices must not be converted to interpolated float or normalized fields.
+See the primary SDK [struct definitions](https://github.com/ac-custom-shaders-patch/acc-lua-sdk/blob/main/common/ac_struct_item.lua)
+and [stream implementation](https://github.com/ac-custom-shaders-patch/acc-lua-sdk/blob/main/lib_replaystream.lua).
+Actual CSP saved-file timing and seek boundaries are still subject to in-game acceptance.
+
+During live updates, the current car snapshot is prepared before updating its shared stream
+slot. Valid-to-valid updates do not first publish an empty slot. Fields that become invalid
+have their validity revoked before payload clearing; disabled recording, departed cars and
+slots beyond the current grid are still cleared. In replay mode
+the buffers belong to CSP and are never written. The reader keeps no previous-frame value cache:
+pause and reverse seeking read the current provided slot, and zero/unrecorded frames stay missing.
+Indices 22 and above can display live data but are not recorded. Neither stream patches existing
+replay files. Initialising a stream with recording disabled can still add an empty replay block;
+zero file-size overhead is not promised.
 
 ## Files the app writes
 
 - Settings: CSP app storage (`Documents\Assetto Corsa\cfg\extension\state\lua\app\`).
 - Diagnostics: `Documents\Assetto Corsa\logs\f1_2026_speedometer_hud_diag.log`, last 600 lines,
   accumulating across launches; the same lines go to `custom_shaders_patch.log` tagged `[F1-2026-HUD]`.
+- Product state streams inside newly saved replays when enabled; no CSV is required to view them.
+
+The development `native_probe.lua` and its automatic CSV generation are removed from the app.
+Historic samples and backup files are not automatically deleted. Startup diagnostics can still
+write independently of the periodic diagnostics checkbox; probe removal does not mean no logs.
 
 No car or track file is read from disk or modified.
