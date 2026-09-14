@@ -1,6 +1,6 @@
-# Known issues — version 0.9.2
+# Known issues — version 0.9.25
 
-Updated 2026-09-13 for version 0.9.2.
+Updated 2026-09-14 for version 0.9.25 (same app behaviour as 0.9.2).
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validation scope.
 
 ## Throttle arc and recovery chip flicker around gear shifts: by design
@@ -45,5 +45,6 @@ The `replayGaps` diagnostic reports such holes during playback.
 
 ## Other open acceptance items
 
-Listed in COMPATIBILITY.md: exact FA25 supplemental replay recording, mixed-camera behavior,
-no-DRS rendering, additional Pro live checks and actual fonts/scales.
+Listed in COMPATIBILITY.md: a live Pro session on the 0.9.2 adapter (including AI cars and a new
+Pro recording), exact FA25 supplemental replay recording, mixed-camera behavior, no-DRS rendering
+and actual fonts/scales.

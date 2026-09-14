@@ -4,7 +4,6 @@ Back up and replace only the HUD's managed files, or restore one deployment.
 .DESCRIPTION
 Requires Assetto Corsa to be closed. BackupRoot must be outside the repository and
 the game installation. Unknown files and user settings are never copied or removed.
-Use -RetireNativeProbe only when the production HUD no longer loads native_probe.
 Every deployment creates deployment.json with before/after SHA-256 hashes.
 Rollback: ./tools/deploy.ps1 -AcRoot <game> -RestoreManifest <deployment.json>
 Rollback refuses to overwrite files changed after deployment. Empty directories
@@ -14,14 +13,12 @@ are retained. This script never deletes an app directory.
 param(
   [Parameter(Mandatory = $true)][string]$AcRoot,
   [Parameter(Mandatory = $true, ParameterSetName = 'Install')][string]$BackupRoot,
-  [Parameter(ParameterSetName = 'Install')][switch]$RetireNativeProbe,
   [Parameter(Mandatory = $true, ParameterSetName = 'Restore')][string]$RestoreManifest
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $managedFiles = @('f1_2026_speedometer_hud.lua', 'hud_data.lua', 'manifest.ini')
-$allowedFiles = @($managedFiles) + 'native_probe.lua'
 $repo = [IO.Path]::GetFullPath((Split-Path -Parent $PSScriptRoot))
 $gameRoot = [IO.Path]::GetFullPath($AcRoot).TrimEnd('\', '/')
 $sourceRoot = Join-Path $repo 'apps\lua\f1_2026_speedometer_hud'
@@ -84,13 +81,12 @@ if ($PSCmdlet.ParameterSetName -eq 'Restore') {
     throw 'Manifest schema, app or installation path does not match this restore request.'
   }
   $entries = @($manifest.files)
-  if ($entries.Count -lt 3 -or $entries.Count -gt 4 -or
+  if ($entries.Count -ne $managedFiles.Count -or
       @($entries.name | Select-Object -Unique).Count -ne $entries.Count) {
     throw 'Invalid managed-file list in deployment manifest.'
   }
   foreach ($entry in $entries) {
-    if ($allowedFiles -notcontains $entry.name -or $entry.action -notin @('install', 'remove') -or
-        ($entry.action -eq 'remove' -and $entry.name -ne 'native_probe.lua')) {
+    if ($managedFiles -notcontains $entry.name -or $entry.action -ne 'install') {
       throw 'Manifest contains an unsupported file or action.'
     }
     $target = Join-Path $destinationRoot $entry.name
@@ -113,7 +109,7 @@ if ($PSCmdlet.ParameterSetName -eq 'Restore') {
       [IO.Directory]::CreateDirectory($destinationRoot) | Out-Null
       [IO.File]::Copy((Join-Path $backupDirectory ('before\' + $entry.name)), $target, $true)
     } elseif (Test-Path -LiteralPath $target -PathType Leaf) {
-      # The only removal is this verified, explicitly named managed file.
+      # The managed file did not exist before that deployment, so restoring means removing it.
       Remove-Item -LiteralPath $target -Force
     }
     if ((Get-FileDigest $target) -ne $entry.beforeHash) { throw "Restore verification failed: $($entry.name)" }
@@ -134,18 +130,11 @@ foreach ($name in $managedFiles) {
   Assert-PlainPath $source
   if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "Source missing: $source" }
 }
-if ($RetireNativeProbe -and (Select-String -LiteralPath (Join-Path $sourceRoot 'f1_2026_speedometer_hud.lua') -Pattern 'native_probe' -Quiet)) {
-  throw 'The source HUD still refers to native_probe; remove its production integration before retiring it.'
-}
-$names = @($managedFiles)
-if ($RetireNativeProbe) { $names += 'native_probe.lua' }
 $entries = @()
-foreach ($name in $names) {
+foreach ($name in $managedFiles) {
   $target = Join-Path $destinationRoot $name
   Assert-PlainPath $target
-  $action = if ($name -eq 'native_probe.lua') { 'remove' } else { 'install' }
-  $afterHash = if ($action -eq 'install') { Get-FileDigest (Join-Path $sourceRoot $name) } else { $null }
-  $entries += [pscustomobject]@{ name = $name; action = $action; beforeHash = (Get-FileDigest $target); afterHash = $afterHash }
+  $entries += [pscustomobject]@{ name = $name; action = 'install'; beforeHash = (Get-FileDigest $target); afterHash = (Get-FileDigest (Join-Path $sourceRoot $name)) }
 }
 $backupDirectory = Join-Path $backupBase ('hud-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss-fff') + '-' + [Guid]::NewGuid().ToString('N').Substring(0, 8))
 [IO.Directory]::CreateDirectory((Join-Path $backupDirectory 'before')) | Out-Null
@@ -167,18 +156,14 @@ try {
     if ((Get-FileDigest (Join-Path $destinationRoot $entry.name)) -ne $entry.beforeHash) {
       throw "Installation changed during backup: $($entry.name)"
     }
-    if ($entry.action -eq 'install' -and (Get-FileDigest (Join-Path $sourceRoot $entry.name)) -ne $entry.afterHash) {
+    if ((Get-FileDigest (Join-Path $sourceRoot $entry.name)) -ne $entry.afterHash) {
       throw "Source changed during backup: $($entry.name)"
     }
   }
   [IO.Directory]::CreateDirectory($destinationRoot) | Out-Null
   foreach ($entry in $entries) {
     $target = Join-Path $destinationRoot $entry.name
-    if ($entry.action -eq 'install') {
-      [IO.File]::Copy((Join-Path $sourceRoot $entry.name), $target, $true)
-    } elseif (Test-Path -LiteralPath $target -PathType Leaf) {
-      Remove-Item -LiteralPath $target -Force
-    }
+    [IO.File]::Copy((Join-Path $sourceRoot $entry.name), $target, $true)
     if ((Get-FileDigest $target) -ne $entry.afterHash) { throw "Install verification failed: $($entry.name)" }
     $manifest.applied += $entry.name
     Write-Manifest $manifest $manifestPath
@@ -191,4 +176,3 @@ try {
   throw "Deployment stopped. Preserve the verified backup and restore with -RestoreManifest '$manifestPath'. $($_.Exception.Message)"
 }
 Write-Output "Installed and SHA-256 verified $($managedFiles.Count) managed files. Unrelated files and settings preserved."
-if ($RetireNativeProbe) { Write-Output 'Retired native_probe.lua; historical CSV evidence was not touched.' }

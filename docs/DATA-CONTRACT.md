@@ -1,8 +1,9 @@
 # Data contract
 
-This document describes version 0.9.2 (vehicle compatibility) and the immutable v0.9.1 Pro
-replay contract. Reference runtime: CSP build 4116. Actual validation and outstanding in-game
-checks are recorded in [COMPATIBILITY.md](COMPATIBILITY.md).
+This document describes version 0.9.25 (a documentation update of the 0.9.2 vehicle-compatibility
+release; the app's behaviour is unchanged) and the immutable v0.9.1 Pro replay contract.
+Reference runtime: CSP build 4116. Actual validation and outstanding in-game checks are recorded
+in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Sources per mode
 
@@ -181,10 +182,9 @@ zero file-size overhead is not promised.
 - Settings: CSP app storage (`Documents\Assetto Corsa\cfg\extension\state\lua\app\`).
 - Diagnostics: `Documents\Assetto Corsa\logs\f1_2026_speedometer_hud_diag.log`, last 600 lines,
   accumulating across launches; the same lines go to `custom_shaders_patch.log` tagged `[F1-2026-HUD]`.
-- Product state streams inside newly saved replays when enabled; no CSV is required to view them.
+- Product state streams inside newly saved replays when enabled; no extra file is required to view them.
 
-The development `native_probe.lua` and its automatic CSV generation are removed from the app.
-Historic samples and backup files are not automatically deleted. Startup diagnostics can still
-write independently of the periodic diagnostics checkbox; probe removal does not mean no logs.
+The launch line of the diagnostics file is written at start-up independently of the periodic
+diagnostics checkbox.
 
 No car or track file is read from disk or modified.

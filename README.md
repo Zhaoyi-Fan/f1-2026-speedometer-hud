@@ -5,8 +5,10 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.2** adds the vehicle compatibility changes. See
-[compatibility and validation](docs/COMPATIBILITY.md) for the tested boundaries.
+Version **0.9.25** is a documentation and packaging update of 0.9.2, which added the vehicle
+compatibility changes; the app's behaviour is unchanged. See
+[compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
+is still pending.
 The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
 cut and the downshift auto-blip ([known issues](docs/KNOWN-ISSUES.md)).
 
@@ -24,7 +26,7 @@ remote cars can expose fewer fields; missing data is never replaced by the playe
 | Car | Display | Energy and replay |
 | --- | --- | --- |
 | FA26 Pro, exact ID `vrc_formula_alpha_2026_csp` | SM / OT / BOOST | Full Pro panel and original Pro replay stream |
-| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST; SM and recovery require validated signals |
+| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode and recovery state |
 | FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; exact FA25 CSP gets a small DRS recording when native replay history is unavailable |
 | Cars without DRS | The same DRS indicator, always dark | No energy panel |
 
@@ -62,8 +64,8 @@ energy panel.
 - Strategy: `STRAT n`, the current deployment-map split, and the PU mode name.
 - Status chips: SM state, OT state, Boost, Charge mode, PL / PLP (power-limited states), pit limiter.
 
-**Native FA26** has a compact panel with battery percentage, the actual native deployment name
-and a recovery indicator once validated. Only the battery side bar is used. BOOST represents
+**Native FA26** has a compact panel with battery percentage, the native deployment name and a
+recovery indicator. Only the battery side bar is used. BOOST represents
 the native manual override command, not automatic deployment or guaranteed output power.
 Native SM uses only off / available / active; it has no Pro pre-latch or late state. OT stays
 dark. Recovery is distinct from Pro Charge / Anti mode. No Pro MJ capacity, kW estimate,
@@ -104,8 +106,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.2.zip` from the
-[v0.9.2 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.2)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.25.zip` from the
+[v0.9.25 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.25)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -113,13 +115,12 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.2**.
+replay and check that the settings window shows version **0.9.25**.
 
 **From source:** close AC and run `tools\deploy.ps1 -AcRoot "D:\path\to\assettocorsa"
 -BackupRoot "D:\HUD-backups"` in PowerShell. The backup folder must be outside the repository
 and game installation. The script backs up and verifies only the three managed app files,
-retaining settings and unrelated files. If updating the temporary development-probe installation,
-add `-RetireNativeProbe` to back up and remove that one file. Historical CSV evidence is retained.
+retaining settings and unrelated files.
 To undo one installation, use the same script with `-AcRoot` and
 `-RestoreManifest "D:\HUD-backups\<deployment>\deployment.json"`.
 
@@ -160,8 +161,7 @@ false or zero. Installing the app does not add missing history to an existing re
 
 Disabling recording clears live write buffers. Playback never writes them; every read rebuilds
 the selected car's state, including pauses, seeks and camera changes. Sharing a replay needs no
-CSV files. The temporary CSV probe is not a product dependency; the limited diagnostics log and
-CSP settings storage are separate and remain available.
+extra files; the diagnostics log and the CSP settings storage are separate from the replay.
 
 ## Settings reference
 
@@ -207,9 +207,9 @@ replay format are documented in [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md).
 - Replays record up to 22 cars, with indices 0–21. Cars with index 22 or higher are not recorded.
 - Native FA26 has a smaller, distinct feature set. Other manufacturers' custom 2026 mods and
   equal telemetry coverage for online remote cars are not claimed.
-- Saved native-stream playback, mixed-camera operation and actual font rendering require the
-  in-game checks listed in [COMPATIBILITY.md](docs/COMPATIBILITY.md). Offline tests are not
-  a substitute for those checks.
+- A live Pro session on the 0.9.2 adapter (including AI cars), mixed-camera operation and actual
+  font rendering still require the in-game checks listed in
+  [COMPATIBILITY.md](docs/COMPATIBILITY.md). Offline tests are not a substitute for those checks.
 
 ## Credits and disclaimer
 

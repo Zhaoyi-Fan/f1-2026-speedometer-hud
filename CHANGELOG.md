@@ -2,6 +2,20 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
+## 0.9.25 — 2026-09-14
+
+Documentation and packaging update; the app behaves exactly as 0.9.2 apart from the version number.
+
+- README: the standard FA26's Straight Mode and recovery indicators are described as shipped
+  features (both were validated in game before 0.9.2).
+- Removed the development-probe option from the source deployment script and its mentions in the
+  docs; the script manages only the three app files. Rollback manifests written by the 0.9.2
+  script with a probe entry need that script version.
+- Rewrote the compatibility notes as a support matrix of in-game and pending checks, and recorded
+  two new results: 0.9.2 played an old Pro replay in game with no gaps, and the Pro live adapter
+  was checked offline against the car's real channel map. A live Pro session on this adapter is
+  still pending.
+
 ## 0.9.2 — 2026-09-13
 
 - Kept the v0.9.1 dial and made the display follow the exact car being watched:

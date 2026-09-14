@@ -5,8 +5,8 @@
 一款用于 Assetto Corsa 的 F1 转播风格 HUD。根据当前镜头车辆，自动选择 FA26 Pro、普通 FA26
 或常规 DRS 显示，保留 v0.9.1 的圆形仪表设计，并支持查看已录制的车辆状态。
 
-**0.9.2** 版加入了车型适配。
-具体实测范围见[兼容与验收记录](docs/COMPATIBILITY.md)。
+**0.9.25** 版是 0.9.2（车型适配）的文档与打包更新，应用行为不变。
+已实测与待实测项见[兼容与验收记录](docs/COMPATIBILITY.md)。
 油门弧显示的是 AC 的物理油门，自动挡升档的短暂断油和降档补油都会如实显示
 （见[已知问题](docs/KNOWN-ISSUES.md)）。
 
@@ -92,18 +92,17 @@ HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看
 
 ## 安装
 
-**使用发布包：**在 [v0.9.2 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.2)
-下载 `f1-2026-speedometer-hud-v0.9.2.zip`，
+**使用发布包：**在 [v0.9.25 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.25)
+下载 `f1-2026-speedometer-hud-v0.9.25.zip`，
 解压到 Assetto Corsa 根目录（包含 `acs.exe` 的文件夹）。解压后应能找到
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`。也可以将压缩包拖入 Content Manager 安装。
 
 **更新旧版：**先退出当前游戏会话，再将新版压缩包覆盖安装到原位置，允许替换应用文件。
-现有 HUD 设置会保留。重新进入比赛或回放后，可在设置窗口确认版本为 **0.9.2**。
+现有 HUD 设置会保留。重新进入比赛或回放后，可在设置窗口确认版本为 **0.9.25**。
 
 **从源码安装：**退出 AC 后，用 PowerShell 运行
 `tools\deploy.ps1 -AcRoot "D:\path\to\assettocorsa" -BackupRoot "D:\HUD-backups"`。
 备份位置必须在仓库和游戏目录之外。脚本仅备份、覆盖并校验三个受管应用文件，保留设置及无关文件。
-若更新的是带临时探针的开发安装，加 `-RetireNativeProbe`，仅备份并移除该探针文件，历史 CSV 不删除。
 回滚使用相同脚本与 `-AcRoot`，加
 `-RestoreManifest "D:\HUD-backups\<deployment>\deployment.json"`。
 
@@ -138,7 +137,7 @@ HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看
 升级或重新播放旧文件不会为它补上缺少的历史。
 
 关闭录制会清空实时写入缓冲，播放时只读。每次读取重建当前车辆状态，暂停、倒拖、切车不沿用前一个
-快照。分享回放无需附带 CSV。临时 CSV 探针不属于产品回放依赖；原有有限诊断日志和设置存储仍保留。
+快照。分享回放无需附带其他文件；诊断日志和设置存储与回放无关。
 
 ## 设置一览
 
@@ -180,7 +179,7 @@ PL / PLP、直线模式预锁与激活）来自 VRC 赛车的遥测总线，通�
 
 - 回放最多记录 22 辆车，即车辆索引 0–21；索引 22 及之后的车辆不会录制。
 - 普通 FA26 功能少于 Pro，使用独立的数据语义；不承诺其他厂商自定义 2026 mod 或线上远程车同等覆盖。
-- 新流保存后播放、混合镜头和实际字体效果需游戏内验收；当前完成项及待测项见
+- 0.9.2 适配器上的 Pro 实时会话（含 AI 车）、混合镜头和实际字体效果仍需游戏内验收；当前完成项及待测项见
   [COMPATIBILITY.md](docs/COMPATIBILITY.md)，离线测试不能代替游戏实测。
 
 ## 致谢与声明
