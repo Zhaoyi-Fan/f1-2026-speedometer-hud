@@ -1,8 +1,8 @@
-# Compatibility and validation — version 0.9.25
+# Compatibility and validation — version 0.10.0
 
-Updated 2026-09-14. Runtime reference: CSP build 4116. Version 0.9.25 changes documentation and
-packaging only, so every check below applies to the 0.9.2 code it ships. The 0.9.1 ZIP is the
-earlier Pro-only build.
+Updated 2026-09-15. Runtime reference: CSP build 4116. Version 0.10.0 replaces the side bars with a
+battery glyph inside the dial; the adapters, validity rules and replay streams are those of 0.9.2,
+so the checks below still apply to them. The 0.9.1 ZIP is the earlier Pro-only build.
 
 ## Support matrix
 
@@ -20,7 +20,8 @@ earlier Pro-only build.
 | Other conventional cars | Native live DRS; no supplemental recording | Generic adapter tests | Native replay reliability, per car |
 | Cars without DRS | Same DRS label, always dark | Known-absent and conflicting-input tests | A game screenshot |
 | Mixed camera, pause, reverse seek, missing data | The current snapshot is rebuilt every update; no previous-car or future-value cache | Synthetic routing and state tests | Mixed-grid acceptance |
-| Chinese / English, scale, panel and bars | Pro dial and panel, compact standard-FA26 panel, plain dial for other cars | 72 UI combinations and drawing bounds | Actual font rendering at each scale |
+| Battery glyph, Pro and standard FA26 | Body = Boost button; ring and terminal = MGU-K flow of the current update (red harvest, green deploy, magenta Boost), brightness from `|kW| / 350`; bolt = the same hue, white on the magenta Boost body; fill anchored to the right wall, amber when the displayed figure is 10 % or less; standard FA26 red at a fixed brightness and never green; `--` without fill or bolt when the charge is invalid | Offline UI checks of every state, the 5 kW deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates) | A Pro session with harvesting, deploying, Boost and super-clipping; one lap with the automatic gearbox (see KNOWN-ISSUES); readability of the digits, bolt and ring at the user's scale |
+| Chinese / English, scale, panel and glyph | Pro dial and panel, compact standard-FA26 panel, plain dial for other cars; the `BOOST` badge returns when the glyph is off | 72 UI combinations and drawing bounds | Actual font rendering at each scale |
 
 ## What the standard-FA26 evidence means
 
@@ -46,11 +47,14 @@ backups and machine logs are excluded from the repository.
 - Data tests (519 checks): exact classification, callable CSP API tables, 242 / 132-byte layouts,
   codecs, partial validity, zero / false, wrong owner or slot, missing frames, dropped cars,
   recording off, replay write protection, camera changes and range limits.
-- UI tests (4,104 checks): execute the real main Lua with a stub data adapter and a drawing
+- UI tests (5,602 checks): execute the real main Lua with a stub data adapter and a drawing
   recorder. They validate content, geometry, scale and language combinations, partial Pro data
-  and the canvas origin, check that the pedal arcs and recovery chip draw each update's values
-  through an upshift cut and an auto-blip (three vehicle kinds, live and replay), and cover the
-  `replayGaps` diagnostic.
+  and the canvas origin, the battery glyph's states (harvest / deploy / Boost / idle / unknown /
+  invalid, the Boost body, the right-anchored fill, the amber low-charge rule, the native car's
+  fixed-intensity red, the conventional car's absence, the brightness easing and its pause
+  behaviour), check that the pedal arcs and recovery chip draw each update's values through an
+  upshift cut and an auto-blip (three vehicle kinds, live and replay), and cover the `replayGaps`
+  diagnostic.
 - Deployment script: tested against a fake AC root in PowerShell 7 and Windows PowerShell 5.1,
   including per-file backups, hashes, unrelated-file retention, rollback, modified-file rejection
   and game-running rejection.

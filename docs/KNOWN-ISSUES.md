@@ -1,7 +1,14 @@
-# Known issues — version 0.9.25
+# Known issues — version 0.10.0
 
-Updated 2026-09-14 for version 0.9.25 (same app behaviour as 0.9.2).
+Updated 2026-09-15 for version 0.10.0 (in-dial battery glyph; adapters and replay streams as in 0.9.2).
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validation scope.
+
+## Battery ring around automatic upshifts: not yet sampled
+
+The automatic gearbox cuts the physics throttle for one or two frames on each upshift (next
+section). Whether `rearMotorPowerKW` also dips below −5 kW during that cut, which would colour the
+battery ring red for those frames, has not been sampled: every Pro session recorded so far used
+manual shifts. If it does, the ring shows it as reported, like the throttle arc.
 
 ## Throttle arc and recovery chip flicker around gear shifts: by design
 
@@ -46,5 +53,6 @@ The `replayGaps` diagnostic reports such holes during playback.
 ## Other open acceptance items
 
 Listed in COMPATIBILITY.md: a live Pro session on the 0.9.2 adapter (including AI cars and a new
-Pro recording), exact FA25 supplemental replay recording, mixed-camera behavior, no-DRS rendering
-and actual fonts/scales.
+Pro recording), the battery glyph's first in-game look (digits over the fill, bolt, ring and halo
+at the user's scale), exact FA25 supplemental replay recording, mixed-camera behavior, no-DRS
+rendering and actual fonts/scales.

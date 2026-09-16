@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.25'
+local VERSION = '0.10.0'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -14,22 +14,32 @@ local KW_MAX = 350           -- MGU-K bar full scale (2026 MGU-K)
 local ES_USABLE_MJ = 4       -- 2026 energy store usable window
 local ES_FLOOR_MJ = 4        -- VRC: usable window sits on top of a 4 MJ floor (ESOC 4..8 MJ)
 
--- side bars flanking the dial (design units): left = usable battery, right = lap regen vs limit
 local DIAL_W = 340
-local BAR_MARGIN, BAR_W, BAR_GAP, BAR_LABEL_W = 13, 22, 14, 48
-local BAR_TOP, BAR_H = 20, 280
-local DIAL_INSET = BAR_MARGIN + BAR_W + BAR_GAP            -- 49: dial x offset when bars are shown
-local RIGHT_BAR_X = DIAL_INSET + DIAL_W + BAR_GAP          -- 403
-local BARS_TOTAL_W = RIGHT_BAR_X + BAR_W + BAR_MARGIN      -- 438
 local PANEL_GAP, PANEL_W = 12, 308
 local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
+
+-- Battery glyph in the dial (design units, v0.10). It takes the 96 x 20 slot of the former BOOST pill at
+-- (122, 270), the one row whose clearance from the throttle / brake track start caps was verified in game
+-- (see drawDial). Terminal nub on the LEFT, charge fill anchored to the RIGHT wall: deploying moves the
+-- fill edge to the right and harvesting to the left, the same directions as the panel's MGU-K bar.
+-- The body colour follows the Boost button (the pill's own rule); the ring, nub and bolt follow the
+-- MGU-K power of the current update.
+local BAT = { x = 122, y = 270, w = 96, h = 20, nubW = 4, nubH = 8, r = 5, inset = 2.5, ring = 2,
+  halo = { 1.5, 3 }, haloA = { 0.30, 0.14 }, boltX = 6, boltY = 4, digits = 13, lowSoc = 0.10,
+  vanillaI = 0.6, smoothing = 0.12 }
+local KW_DEADBAND = 5        -- |kW| at or below this is idle; also swallows the replay stream's 3 kW quantum
+-- lightning bolt, 8 x 12, as two convex quads sharing a diagonal (ui.pathFillConvex cannot fill a concave shape)
+-- (vertices clockwise on screen: ImGui's anti-aliased fill puts the fringe outside only for clockwise polygons)
+local BAT_BOLT = { { { 5, 0 }, { 5, 4.8 }, { 3.2, 7.2 }, { 0, 7 } }, { { 4.8, 5 }, { 8, 5 }, { 2.4, 12 }, { 3, 7 } } }
+local OUTLINE_OFS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
 
 local sim = ac.getSim()
 
 local cfg = ac.storage({
   scale = 1.0,
   showPanel = true,
-  showBars = true,
+  showBattery = true,
+  batterySmoothing = true,
   followFocused = true,
   lockPlayer = false,
   recordReplay = true,
@@ -60,6 +70,10 @@ local C = {
   boost = rgbm(0.92, 0.2, 0.58, 1),   -- Boost button (dial pill + panel chip): magenta, used nowhere else so it never merges with SM / OT green
   panel = rgbm(0, 0, 0, 0.62),
   barTrack = rgbm(1, 1, 1, 0.12),
+  batFill = rgbm(0.91, 0.92, 0.93, 0.92),   -- charge fill: neutral, so red only ever means harvesting
+  batIdle = rgbm(1, 1, 1, 0.30),            -- battery ring while no energy flows, or the flow is unknown
+  batBolt = rgbm(1, 1, 1, 0.70),            -- bolt and nub at rest
+  outline = rgbm(0, 0, 0, 0.85),            -- outline behind the digits drawn over the light fill
 }
 
 -- 1-based, same table the car's own dash uses (display\styles\style_0\pages.lua puModes); 11 = SLO is the yellow one
@@ -94,7 +108,8 @@ local STR = {
   display = { en = 'Display', zh = '显示' },
   scale = { en = 'Scale: %.2f', zh = '缩放：%.2f' },
   showPanel = { en = 'Show energy panel', zh = '显示能量面板' },
-  showBars = { en = 'Show battery / regen bars beside the dial', zh = '表盘两侧显示电量和回收竖条' },
+  showBattery = { en = 'Battery glyph in the dial (off: BOOST badge)', zh = '表盘内显示电池图标（关闭 = BOOST 徽章）' },
+  batterySmooth = { en = 'Ease the battery ring brightness (120 ms, decorative)', zh = '电池环亮度平滑（120 ms，仅视觉）' },
   follow = { en = 'Follow camera-focused car', zh = '跟随镜头聚焦的车' },
   lock = { en = 'Lock to player car', zh = '锁定玩家车' },
   font = { en = 'Font', zh = '字体' },
@@ -140,6 +155,11 @@ end
 
 local function fmtInt(v) return string.format('%d', math.floor((v or 0) + 0.5)) end
 
+-- The displayed whole percentage, and the low-charge rule applied to that same figure, so '10%' is
+-- never drawn in two colours.
+local function socPercent(soc) return math.floor(soc * 100 + 0.5) end
+local function socLow(soc) return socPercent(soc) <= BAT.lowSoc * 100 end
+
 local function valid(S, field)
   return S.valid and S.valid[field] == true
 end
@@ -149,6 +169,45 @@ local function validAll(S, ...)
     if not valid(S, select(i, ...)) then return false end
   end
   return true
+end
+
+-- Battery ring state from the current update only, in the data contract's order: no hysteresis, no hold.
+-- Returns the state ('harvest', 'deploy', 'boost' or 'idle') and the raw intensity 0..1 (nil when no flow is known).
+local function batteryFlow(S)
+  if S.kind == 'vanilla' then
+    -- The native car reports no power: recovery is a status flag drawn at a declared fixed intensity, and
+    -- deployment is not observable, so the ring is never green here; the button only colours the body.
+    if valid(S, 'recovering') and S.recovering then return 'harvest', BAT.vanillaI end
+    return 'idle', nil
+  end
+  if S.kind ~= 'pro' or not valid(S, 'kw') then return 'idle', nil end
+  local kw = S.kw
+  if kw > KW_DEADBAND then
+    return (valid(S, 'boost') and S.boost) and 'boost' or 'deploy', clamp(kw / KW_MAX, 0, 1)
+  elseif kw < -KW_DEADBAND then
+    return 'harvest', clamp(-kw / KW_MAX, 0, 1)
+  end
+  return 'idle', nil
+end
+
+-- Decorative easing of the ring BRIGHTNESS only (a setting): the state and hue above are never eased. It
+-- advances with sim.dt (following replay speed); while paused sim.dt is 0 and the shown frame's raw value
+-- is drawn. It is evaluated on every drawn update, idle frames easing it down to 0, and restarts from the
+-- raw value on a car change or after any update that did not draw the glyph, so a new flow never inherits
+-- a brightness from an earlier stretch.
+local updateCount = 0
+local batEase = { value = 0, index = nil, stamp = -1 }
+local function batteryIntensity(S, raw)
+  local dt = sim.dt
+  local continuous = batEase.index == S.index and batEase.stamp == updateCount - 1
+  batEase.index, batEase.stamp = S.index, updateCount
+  if not cfg.batterySmoothing or type(dt) ~= 'number' or dt <= 0 or not continuous then
+    batEase.value = raw
+    return raw
+  end
+  local k = 1 - math.exp(-math.min(dt, 0.1) / BAT.smoothing)
+  batEase.value = batEase.value + (raw - batEase.value) * k
+  return batEase.value
 end
 
 -- returns: numbers bold, numbers regular, label bold, label regular, dial label medium. Panel labels switch to the Chinese font
@@ -310,11 +369,12 @@ local function runDiagnostics()
     ac.log(l1)
     diagFileAppend(l1)
     if view.full then
-      local l2 = string.format('%s soc=%.3f esoc=%s kW=%.1f cap=%.0f dep=%.2f reg=%.2f/%.2f strat=%s split=%s pu=%s ot=%s/%s boost=%s chg=%s pl=%s/%s latch=%s smAct=%s wings=%s/%s spd=%.0f gear=%s gas=%.2f',
+      local batState, batRaw = batteryFlow(view)
+      local l2 = string.format('%s soc=%.3f esoc=%s kW=%.1f cap=%.0f dep=%.2f reg=%.2f/%.2f strat=%s split=%s pu=%s ot=%s/%s boost=%s chg=%s pl=%s/%s latch=%s smAct=%s wings=%s/%s spd=%.0f gear=%s gas=%.2f bat=%s/%.2f',
         TAG, view.soc or -1, tostring(view.esoc), view.kw or 0, view.cap or 0, view.deploy or 0, view.regen or 0, view.regenLimit or 0,
         tostring(view.strat), tostring(view.split), tostring(view.puMode), tostring(view.otActive), tostring(view.otPending),
         tostring(view.boost), tostring(view.charge), tostring(view.pl), tostring(view.plp), tostring(view.latch), tostring(view.smActive),
-        tostring(view.wingF), tostring(view.wingR), view.speed or 0, tostring(view.gear), view.gas or 0)
+        tostring(view.wingF), tostring(view.wingR), view.speed or 0, tostring(view.gear), view.gas or 0, batState, batRaw or 0)
       ac.log(l2)
       diagFileAppend(l2)
     elseif view.kind == 'vanilla' or view.kind == 'drs' then
@@ -351,6 +411,7 @@ do
 end
 
 function script.update(dt)
+  updateCount = updateCount + 1
   if btnPanel:pressed() then cfg.showPanel = not cfg.showPanel end
   if btnLock:pressed() then cfg.lockPlayer = not cfg.lockPlayer end
   recordedCars = data.recordAll()
@@ -457,6 +518,73 @@ local SM_STYLE = {
 }
 local SM_CHIP_KEY = { off = 'sm_off', avail = 'sm_avail', pre = 'sm_pre', late = 'sm_late', on = 'sm_on' }
 
+local function textOutlined(font, str, size, x, y, w, h, color, s, hAlign)
+  for _, d in ipairs(OUTLINE_OFS) do text(font, str, size, x + d[1] * s, y + d[2] * s, w, h, C.outline, hAlign) end
+  text(font, str, size, x, y, w, h, color, hAlign)
+end
+
+local function bolt(x, y, s, color, shift)
+  for _, quad in ipairs(BAT_BOLT) do
+    local p = {}
+    for k = 1, 4 do p[k] = vec2(x + quad[k][1] * s + shift, y + quad[k][2] * s + shift) end
+    ui.drawQuadFilled(p[1], p[2], p[3], p[4], color)
+  end
+end
+
+local BAT_HUE = { harvest = C.red, deploy = C.green, boost = C.boost }
+
+-- Every element is a function of the current snapshot: body = Boost button, fill length and digits = state of
+-- charge, ring / nub / bolt hue = flow direction, ring brightness / width and halo = |kW| / 350 (optionally eased).
+local function drawBattery(S, ox, oy, s, fontB)
+  local state, raw = batteryFlow(S)
+  local hue = BAT_HUE[state]
+  local i
+  if S.kind == 'pro' and not valid(S, 'kw') then
+    -- unknown flow clears the easing at once; nothing is carried into the next valid update
+    batEase.value, batEase.index, batEase.stamp, i = 0, S.index, updateCount, 0
+  else
+    i = batteryIntensity(S, raw or 0)   -- idle frames ease the brightness down to 0
+  end
+  local x0, y0 = ox + (BAT.x + BAT.nubW) * s, oy + BAT.y * s        -- body box; the nub sits to its left
+  local w, h = (BAT.w - BAT.nubW) * s, BAT.h * s
+  local p1, p2 = vec2(x0, y0), vec2(x0 + w, y0 + h)
+  if hue then
+    for k = #BAT.halo, 1, -1 do
+      local pad = BAT.halo[k] * s
+      ui.drawRect(vec2(x0 - pad, y0 - pad), vec2(x0 + w + pad, y0 + h + pad),
+        rgbm(hue.r, hue.g, hue.b, i * i * BAT.haloA[k]), (BAT.r + BAT.halo[k]) * s, ui.CornerFlags.All, 2 * s)
+    end
+  end
+  -- Both adapters expose only the manual command, never automatic deployment or estimated power.
+  local boostOn = valid(S, 'boost') and S.boost
+  ui.drawRectFilled(p1, p2, boostOn and C.boost or C.track, BAT.r * s, ui.CornerFlags.All)
+  local socOk = valid(S, 'soc')
+  local soc = socOk and clamp(S.soc, 0, 1) or 0
+  local low = socOk and socLow(soc)
+  if socOk and soc > 0.005 then
+    local lx1, lx2 = x0 + BAT.inset * s, x0 + w - BAT.inset * s
+    local fw = (lx2 - lx1) * soc
+    ui.drawRectFilled(vec2(lx2 - fw, y0 + BAT.inset * s), vec2(lx2, y0 + h - BAT.inset * s),
+      low and C.yellow or C.batFill, math.min(3 * s, fw * 0.5), soc > 0.97 and ui.CornerFlags.All or ui.CornerFlags.Right)
+  end
+  if socOk then
+    -- on a magenta (Boost) body the bolt is white so it stays visible; the ring still carries the flow hue
+    local boltCol = boostOn and C.white or (hue and rgbm(hue.r, hue.g, hue.b, 0.45 + 0.55 * i) or C.batBolt)
+    bolt(x0 + BAT.boltX * s, y0 + BAT.boltY * s, s, C.outline, 0.7 * s)
+    bolt(x0 + BAT.boltX * s, y0 + BAT.boltY * s, s, boltCol, 0)
+  end
+  local ringCol = hue and rgbm(hue.r, hue.g, hue.b, 0.35 + 0.65 * i) or C.batIdle
+  ui.drawRect(p1, p2, ringCol, BAT.r * s, ui.CornerFlags.All, (BAT.ring + i) * s)
+  local ny = y0 + (BAT.h - BAT.nubH) * 0.5 * s
+  ui.drawRectFilled(vec2(ox + BAT.x * s, ny), vec2(x0, ny + BAT.nubH * s), hue and ringCol or C.batBolt, 1.5 * s, ui.CornerFlags.Left)
+  local dx, dw = x0 + 16 * s, w - 20 * s
+  if socOk then
+    textOutlined(fontB, socPercent(soc) .. '%', BAT.digits * s, dx, y0, dw, h, low and C.yellow or C.white, s, ui.Alignment.End)
+  else
+    text(fontB, '--', BAT.digits * s, dx, y0, dw, h, C.dim, ui.Alignment.End)
+  end
+end
+
 local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   local c = vec2(ox + 170 * s, oy + 170 * s)
   ui.drawCircleFilled(c, 169 * s, C.disc, 96)
@@ -500,10 +628,14 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
     if valid(S, 'otActive') and S.otActive then otFill, otTxt = C.green, C.white
     elseif valid(S, 'otPending') and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
     pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
-    -- Both adapters expose only the manual command, never automatic deployment or estimated power.
-    local boostOn = valid(S, 'boost') and S.boost
-    pill(fontB, ox + 122 * s, oy + 270 * s, 96 * s, 20 * s, boostOn and C.boost or C.track, nil,
-      'BOOST', 13 * s, boostOn and C.white or C.dim, 6 * s)
+    if cfg.showBattery then
+      drawBattery(S, ox, oy, s, fontB)   -- the glyph's body carries the Boost button, its ring the energy flow
+    else
+      -- Both adapters expose only the manual command, never automatic deployment or estimated power.
+      local boostOn = valid(S, 'boost') and S.boost
+      pill(fontB, ox + 122 * s, oy + 270 * s, 96 * s, 20 * s, boostOn and C.boost or C.track, nil,
+        'BOOST', 13 * s, boostOn and C.white or C.dim, 6 * s)
+    end
   end
 
   local g = S.gear or 0
@@ -518,60 +650,6 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   local gearX = c.x - (gearLabelW + gearGap + gearValueW) * 0.5
   text(fontM, 'GEAR', 14 * s, gearX, oy + 299 * s, gearLabelW, 30 * s, C.grey, ui.Alignment.Start)
   text(fontB, gearStr, 27 * s, gearX + gearLabelW + gearGap, oy + 297 * s, gearValueW, 34 * s, C.white, ui.Alignment.Start)
-end
-
-local function socColor(soc)
-  if soc > 0.5 then return C.green end
-  if soc > 0.25 then return C.yellow end
-  return C.red
-end
-
-local function vbar(x, y, w, h, frac, color, s)
-  ui.drawRectFilled(vec2(x, y), vec2(x + w, y + h), C.track, 4 * s)
-  if frac and frac > 0.005 then
-    local fh = h * clamp(frac, 0, 1)
-    ui.drawRectFilled(vec2(x, y + h - fh), vec2(x + w, y + h), color, 4 * s)
-  end
-  for i = 1, 3 do
-    local ty = y + h * i / 4
-    ui.drawRectFilled(vec2(x, ty - 0.6 * s), vec2(x + w, ty + 0.6 * s), rgbm(0, 0, 0, 0.55))
-  end
-end
-
--- two vertical bars beside the dial (the VRC dash idiom): left = usable battery, right = lap regen vs limit
-local function drawSideBars(S, ox, oy, s, fontB, fontR)
-  local by, bh = oy + BAR_TOP * s, BAR_H * s
-  local lx = ox + BAR_MARGIN * s
-  local rx = ox + RIGHT_BAR_X * s
-  local llab = lx + (BAR_W * 0.5 - BAR_LABEL_W * 0.5) * s
-  local rlab = rx + (BAR_W * 0.5 - BAR_LABEL_W * 0.5) * s
-  local ty1, ty2 = oy + (BAR_TOP + BAR_H + 4) * s, oy + (BAR_TOP + BAR_H + 20) * s
-
-  if valid(S, 'soc') then
-    local soc = clamp(S.soc, 0, 1)
-    local col = socColor(soc)
-    vbar(lx, by, BAR_W * s, bh, soc, col, s)
-    text(fontB, fmtInt(soc * 100) .. '%', 14 * s, llab, ty1, BAR_LABEL_W * s, 16 * s, col)
-    if S.kind == 'pro' then
-      local usable = valid(S, 'esoc') and math.max(S.esoc - ES_FLOOR_MJ, 0) or (soc * ES_USABLE_MJ)
-      text(fontR, string.format('%.2f MJ', usable), 11 * s, llab, ty2, BAR_LABEL_W * s, 14 * s, C.grey)
-    end
-  else
-    vbar(lx, by, BAR_W * s, bh, 0, C.green, s)
-    text(fontB, '--', 14 * s, llab, ty1, BAR_LABEL_W * s, 16 * s, C.dim)
-  end
-
-  if S.kind ~= 'pro' then return end
-  if validAll(S, 'regen', 'regenLimit') then
-    local lim = S.regenLimit
-    local regen = S.regen or 0
-    vbar(rx, by, BAR_W * s, bh, lim > 0.05 and regen / lim or 0, C.purple, s)
-    text(fontB, string.format('%.1f', regen), 14 * s, rlab, ty1, BAR_LABEL_W * s, 16 * s, C.purple)
-    text(fontR, lim > 0.05 and string.format('/%.1f MJ', lim) or 'MJ', 11 * s, rlab, ty2, BAR_LABEL_W * s, 14 * s, C.grey)
-  else
-    vbar(rx, by, BAR_W * s, bh, 0, C.purple, s)
-    text(fontB, '--', 14 * s, rlab, ty1, BAR_LABEL_W * s, 16 * s, C.dim)
-  end
 end
 
 local function chip(font, x, y, w, h, active, activeFill, label, s, activeTxt)
@@ -592,7 +670,7 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   ui.drawRectFilled(vec2(bx, by), vec2(bx + bw, by + bh), C.barTrack, 3 * s)
   if valid(S, 'soc') then
     local soc = clamp(S.soc, 0, 1)
-    local col = soc > 0.5 and C.green or (soc > 0.25 and C.yellow or C.red)
+    local col = socLow(soc) and C.yellow or C.batFill   -- same level rule as the dial glyph
     if soc > 0.002 then ui.drawRectFilled(vec2(bx, by), vec2(bx + bw * soc, by + bh), col, 3 * s) end
     -- usable energy: the 2026 ES has a 4 MJ usable window; VRC models it as the top 4 MJ of an 8 MJ store
     -- (kersChargeESOC = 4 + 4 x kersCharge, verified from the 2026-09-10 logs). Raw ESOC stays in diagnostics.
@@ -686,16 +764,16 @@ local function drawVanillaPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   ui.drawRectFilled(vec2(px, py), vec2(px + pw, py + ph), C.panel, 10 * s)
   text(fontLR, L('battery'), 12 * s, lx, py + 12 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
   local soc = valid(S, 'soc') and clamp(S.soc, 0, 1) or nil
-  local col = soc and socColor(soc) or C.dim
-  text(fontB, soc and (fmtInt(soc * 100) .. '%') or '--', 18 * s, lx, py + 8 * s, cw, 24 * s, col, ui.Alignment.End)
+  local low = soc and socLow(soc)
+  text(fontB, soc and (socPercent(soc) .. '%') or '--', 18 * s, lx, py + 8 * s, cw, 24 * s, soc and (low and C.yellow or C.white) or C.dim, ui.Alignment.End)
   local by, bh = py + 39 * s, 14 * s
   ui.drawRectFilled(vec2(lx, by), vec2(lx + cw, by + bh), C.barTrack, 3 * s)
-  if soc and soc > 0.002 then ui.drawRectFilled(vec2(lx, by), vec2(lx + cw * soc, by + bh), col, 3 * s) end
+  if soc and soc > 0.002 then ui.drawRectFilled(vec2(lx, by), vec2(lx + cw * soc, by + bh), low and C.yellow or C.batFill, 3 * s) end
   text(fontLR, L('strategy'), 12 * s, lx, py + 72 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
   text(fontB, valid(S, 'strategy') and S.strategyName or '--', 20 * s, lx, py + 91 * s, cw, 28 * s, C.white, ui.Alignment.Start)
   local recoveryKnown = valid(S, 'recovering')
   local recovering = recoveryKnown and S.recovering
-  chip(fontLB, lx, py + 144 * s, cw, 28 * s, recovering, C.purple,
+  chip(fontLB, lx, py + 144 * s, cw, 28 * s, recovering, C.red,   -- same red as the dial's harvest ring
     recoveryKnown and L('recovering') or (L('recovering') .. ' --'), s)
   if cfg.diagnostics then
     text(fontR, tostring(S.source), 10 * s, lx, py + 185 * s, cw, 16 * s, C.dim, ui.Alignment.Start)
@@ -708,19 +786,15 @@ function script.windowMain(dt)
   local o = ui.getCursor()
   local ox, oy = o.x, o.y
   local pro, vanilla = view.kind == 'pro', view.kind == 'vanilla'
-  local bars = cfg.showBars and (pro or vanilla)
   local panel = cfg.showPanel and (pro or vanilla)
-  local leftW = bars and (pro and BARS_TOTAL_W or (DIAL_INSET + DIAL_W + BAR_MARGIN)) or DIAL_W
   local panelW = vanilla and VANILLA_PANEL_W or PANEL_W
-  local dialOx = ox + (bars and DIAL_INSET or 0) * s
-  drawDial(view, dialOx, oy, s, fontB, fontR, fontM)
-  if bars then drawSideBars(view, ox, oy, s, fontB, fontR) end
+  drawDial(view, ox, oy, s, fontB, fontR, fontM)
   if panel then
     local draw = vanilla and drawVanillaPanel or drawPanel
-    draw(view, ox + (leftW + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR)
+    draw(view, ox + (DIAL_W + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR)
   end
   ui.setCursor(o)
-  ui.dummy(vec2((leftW + (panel and (PANEL_GAP + panelW) or 0)) * s, 340 * s))
+  ui.dummy(vec2((DIAL_W + (panel and (PANEL_GAP + panelW) or 0)) * s, 340 * s))
 end
 
 function script.windowSettings(dt)
@@ -732,7 +806,8 @@ function script.windowSettings(dt)
   ui.header(L('display'))
   cfg.scale = ui.slider('##scale', cfg.scale, 0.5, 2.5, L('scale'))
   if ui.checkbox(L('showPanel'), cfg.showPanel) then cfg.showPanel = not cfg.showPanel end
-  if ui.checkbox(L('showBars'), cfg.showBars) then cfg.showBars = not cfg.showBars end
+  if ui.checkbox(L('showBattery'), cfg.showBattery) then cfg.showBattery = not cfg.showBattery end
+  if ui.checkbox(L('batterySmooth'), cfg.batterySmoothing) then cfg.batterySmoothing = not cfg.batterySmoothing end
   if ui.checkbox(L('follow'), cfg.followFocused) then cfg.followFocused = not cfg.followFocused end
   if ui.checkbox(L('lock'), cfg.lockPlayer) then cfg.lockPlayer = not cfg.lockPlayer end
   local fontName, fontChanged = ui.inputText(L('font'), cfg.fontName)

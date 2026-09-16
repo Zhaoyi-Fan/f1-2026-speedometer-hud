@@ -5,8 +5,8 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.25** is a documentation and packaging update of 0.9.2, which added the vehicle
-compatibility changes; the app's behaviour is unchanged. See
+Version **0.10.0** replaces the two side bars with a battery glyph inside the dial; the adapters,
+panels and replay streams are those of 0.9.2. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
 is still pending.
 The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
@@ -46,11 +46,16 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 | --- | --- | --- |
 | `SM` Straight Mode | not available | white = available, press to pre-latch · blue = pre-latched, engages at the zone · yellow = available but already inside the zone · green = wings in Straight Mode position |
 | `OT` Overtake | not available | white outline = granted, waiting for the activation line · green = active this lap |
-| `BOOST` | off | magenta while the Boost button is held / toggled |
+| Battery glyph | `--` with an idle ring | body magenta while the Boost button is held / toggled · ring and terminal red while harvesting, green while deploying, magenta while Boost deploys, brighter with more power · bolt in the same hue, white on the magenta body · fill and digits amber when the figure is 10 % or less |
 
-**Pro side bars:** usable battery charge on the left, shown as a percentage and in MJ; energy harvested
-this lap on the right, shown against the lap limit. These bars can be hidden independently of the
-energy panel.
+**Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below `SM` / `OT`.
+The terminal is on the left and the fill is anchored to the right, so deploying moves the fill edge to
+the right and harvesting moves it to the left, the same directions as the panel's MGU-K bar. The ring
+around it shows the MGU-K flow of the current update, with brightness, width and a small halo
+following the power. Nothing animates on its own apart from the optional 120 ms brightness easing
+(on by default; the state and hue are never eased). The body carries the Boost button exactly as the
+former `BOOST` badge did, so Boost held into a braking zone reads as a magenta body with a red ring.
+Switching the glyph off in settings brings the `BOOST` badge back.
 
 **Pro energy panel:** can be shown or hidden in settings or with a bound key or wheel button.
 
@@ -65,7 +70,9 @@ energy panel.
 - Status chips: SM state, OT state, Boost, Charge mode, PL / PLP (power-limited states), pit limiter.
 
 **Native FA26** has a compact panel with battery percentage, the native deployment name and a
-recovery indicator. Only the battery side bar is used. BOOST represents
+recovery indicator. Its battery glyph shows a red ring at a fixed brightness while the car reports
+recovery and a magenta body while the button is pressed; it never turns green, because deployment
+is not observable on this car. BOOST represents
 the native manual override command, not automatic deployment or guaranteed output power.
 Native SM uses only off / available / active; it has no Pro pre-latch or late state. OT stays
 dark. Recovery is distinct from Pro Charge / Anti mode. No Pro MJ capacity, kW estimate,
@@ -74,7 +81,7 @@ lap-recovery quota, split or PU mode is assigned to this car.
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.1 dial state illustrations](docs/dial-states.png)
+![v0.10.0 dial state illustrations](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -106,8 +113,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.25.zip` from the
-[v0.9.25 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.25)
+**Release zip:** download `f1-2026-speedometer-hud-v0.10.0.zip` from the
+[v0.10.0 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.10.0)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -115,7 +122,10 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.25**.
+replay and check that the settings window shows version **0.10.0**. The dial no longer has side
+bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
+98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
+dial; drag the window once if it lands somewhere new.
 
 **From source:** close AC and run `tools\deploy.ps1 -AcRoot "D:\path\to\assettocorsa"
 -BackupRoot "D:\HUD-backups"` in PowerShell. The backup folder must be outside the repository
@@ -130,9 +140,9 @@ has no background; hover it to get the title bar and drag it where you want it.
 ## Usage
 
 - Open the app's settings (gear icon on the HUD's floating title bar).
-- **Display**: scale, show the energy panel, show the side bars, follow the camera-focused car,
-  lock to the player car, dial font (default Bahnschrift), Chinese label font (default Microsoft
-  YaHei UI).
+- **Display**: scale, show the energy panel, battery glyph in the dial (off restores the `BOOST`
+  badge), ease the battery ring brightness, follow the camera-focused car, lock to the player car,
+  dial font (default Bahnschrift), Chinese label font (default Microsoft YaHei UI).
 - **Language**: switch between English and 简体中文. Abbreviations such as SM, OT, BOOST, PL,
   PLP, STRAT, PU, MGU-K, KMH, RPM and GEAR remain the same in both languages.
 - **Bindings**: two buttons you can bind to keys or wheel buttons, "toggle energy panel" and "lock
@@ -169,7 +179,8 @@ extra files; the diagnostics log and the CSP settings storage are separate from 
 | --- | --- | --- |
 | Scale | 1.00 | 0.5 to 2.5 |
 | Show energy panel | on | also a bindable button |
-| Show battery / regen bars beside the dial | on | |
+| Battery glyph in the dial | on | off restores the `BOOST` badge |
+| Ease the battery ring brightness (120 ms, decorative) | on | brightness only; the state and hue are never eased |
 | Follow camera-focused car | on | falls back to the player car when no car is focused |
 | Lock to player car | off | also a bindable button |
 | Font / Chinese label font | Bahnschrift / Microsoft YaHei UI | any installed DirectWrite font |

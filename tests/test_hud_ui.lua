@@ -101,6 +101,15 @@ ui = {
   drawRect = function(a, b, color)
     emit({ kind = 'border', x = a.x, y = a.y, w = b.x - a.x, h = b.y - a.y, color = color })
   end,
+  drawQuadFilled = function(a, b, c, d, color)
+    local x1, y1 = math.min(a.x, b.x, c.x, d.x), math.min(a.y, b.y, c.y, d.y)
+    local x2, y2 = math.max(a.x, b.x, c.x, d.x), math.max(a.y, b.y, c.y, d.y)
+    -- ImGui's anti-aliased convex fill needs clockwise winding in screen space (y down): shoelace sum > 0
+    local shoelace = (a.x * b.y - b.x * a.y) + (b.x * c.y - c.x * b.y) + (c.x * d.y - d.x * c.y) + (d.x * a.y - a.x * d.y)
+    check(shoelace > 0, 'filled quad is wound clockwise for the anti-aliased fringe')
+    emit({ kind = 'quad', x = x1, y = y1, w = x2 - x1, h = y2 - y1, color = color })
+  end,
+  CornerFlags = { None = 0, All = 15, Left = 5, Right = 10 },
   pathClear = function() currentPath = nil end,
   pathArcTo = function(center, radius, startAngle, endAngle)
     currentPath = { kind = 'arc', x = center.x, y = center.y, r = radius, a0 = startAngle, a1 = endAngle }
@@ -186,23 +195,44 @@ local function assertBounds(context)
     end
   end
 end
+-- Battery glyph geometry at scale 1: body (126, 270) 92 x 20, digits box (142, 270) 72 x 20, nub (122, 276) 4 x 8.
+local batteryColor = rgbm(0.91, 0.92, 0.93, 0.92)
+local batteryIdle = rgbm(1, 1, 1, 0.30)
+local yellow = rgbm(0.95, 0.75, 0.15, 1)
+local function findTextAt(value, x, y)
+  for _, command in ipairs(commands) do
+    if command.kind == 'text' and command.text == value and near(command.x, x) and near(command.y, y) then return command end
+  end
+end
+local function boxAt(kind, x, y, w, h)
+  for _, command in ipairs(commands) do
+    if command.kind == kind and near(command.x, x) and near(command.y, y) and near(command.w, w) and near(command.h, h) then return command end
+  end
+end
+local function quads()
+  local count = 0
+  for _, command in ipairs(commands) do if command.kind == 'quad' then count = count + 1 end end
+  return count
+end
+local function batteryBody(scale) scale = scale or 1; return boxAt('rect', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
+local function batteryRing(scale) scale = scale or 1; return boxAt('border', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
+local function batteryDigits(value, scale) scale = scale or 1; return findTextAt(value, 142 * scale, 270 * scale) end
+local function sameHue(a, b) return a and b and near(a.r, b.r) and near(a.g, b.g) and near(a.b, b.b) end
 for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
   for _, lang in ipairs({ 'en', 'zh' }) do
     for _, scale in ipairs({ 0.5, 1, 2.5 }) do
-      for _, showBars in ipairs({ false, true }) do
+      for _, showBattery in ipairs({ false, true }) do
         for _, showPanel in ipairs({ false, true }) do
           cases = cases + 1
-          cfg.lang, cfg.scale, cfg.showBars, cfg.showPanel = lang, scale, showBars, showPanel
+          cfg.lang, cfg.scale, cfg.showBattery, cfg.showPanel = lang, scale, showBattery, showPanel
           snapshots[0] = fixture(kind)
           render()
-          local bars = showBars and kind ~= 'drs'
           local panel = showPanel and kind ~= 'drs'
-          local leftWidth = bars and (kind == 'pro' and 438 or 402) or 340
           local panelWidth = kind == 'vanilla' and 248 or 308
-          check(near(canvas.x, (leftWidth + (panel and (12 + panelWidth) or 0)) * scale)
+          check(near(canvas.x, (340 + (panel and (12 + panelWidth) or 0)) * scale)
             and near(canvas.y, 340 * scale), kind .. ': expected canvas dimensions')
           local disc = commands[1]
-          check(disc.kind == 'circle' and near(disc.x, (170 + (bars and 49 or 0)) * scale)
+          check(disc.kind == 'circle' and near(disc.x, 170 * scale)
             and near(disc.y, 170 * scale) and near(disc.r, 169 * scale), 'v0.9.1 circular dial geometry retained')
           local speedText = findText('123')
           check(speedText and near(speedText.y, 78 * scale) and near(speedText.h, 62 * scale), 'speed stack geometry retained')
@@ -212,10 +242,19 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
             local drs = findText('DRS')
             check(drs and near(drs.x + drs.w * 0.5, 170 * scale) and near(drs.y, 251 * scale), 'single DRS badge centered')
             check(not findText('SM') and not findText('OT') and not findText('BOOST'), 'legacy layout has no 2026 badge cluster')
+            check(not batteryBody(scale) and quads() == 0, 'legacy layout has no battery glyph')
             check(colorEquals(matchingFill(drs), green), 'valid active native DRS illuminates')
             check(not textContains('MJ') and not textContains('kW') and not textContains('PU '), 'legacy layout has no Pro energy fields')
           else
-            check(findText('SM') and findText('OT') and findText('BOOST') and not findText('DRS'), '2026 badge cluster retained')
+            check(findText('SM') and findText('OT') and not findText('DRS'), '2026 badge cluster retained')
+            if showBattery then
+              check(not findText('BOOST') and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge')
+              check(batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'battery digits sit inside the glyph')
+              check(colorEquals(batteryBody(scale).color, boostColor) and quads() == 4, 'Boost button colours the battery body; bolt drawn')
+            else
+              check(findText('BOOST') and not batteryBody(scale) and quads() == 0, 'BOOST badge returns when the glyph is off')
+              check(colorEquals(matchingFill(findText('BOOST')), boostColor), 'BOOST badge shows the button')
+            end
             if kind == 'pro' then
               check(colorEquals(matchingFill(findText('OT')), green), 'Pro OT retains its active indication')
               if panel then check(findText('MGU-K') and textContains('MJ') and findText('PU RACE'), 'Pro panel keeps energy and PU fields') end
@@ -235,37 +274,145 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
     end
   end
 end
-print('UI matrix: ' .. tostring(cases) .. ' vehicle/language/scale/panel/bars combinations passed')
+print('UI matrix: ' .. tostring(cases) .. ' vehicle/language/scale/panel/battery combinations passed')
 
-cfg.scale, cfg.lang, cfg.showPanel, cfg.showBars = 1, 'en', true, true
+cfg.scale, cfg.lang, cfg.showPanel, cfg.showBattery = 1, 'en', true, true
 snapshots[0] = fixture('pro')
 sim.focusedCar = 0
 render()
-check(findText('PU RACE') and colorEquals(matchingFill(findText('BOOST')), boostColor), 'Pro fixture starts with active data')
+check(findText('PU RACE') and colorEquals(batteryBody().color, boostColor), 'Pro fixture starts with active data')
 snapshots[1] = { kind = 'vanilla', source = 'missing native history', speed = 99, rpm = 8001, gear = 5, valid = {} }
 sim.focusedCar = 1
 render()
 check(lastReadIndex == 1 and findText('99') and findText('8001'), 'camera selects new car snapshot')
 check(not findText('75%') and not findText('50%') and not findText('NODEPLOY') and not textContains('PU '), 'camera switch clears previous energy and strategy values')
-check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(matchingFill(findText('BOOST')), dark), 'missing snapshot does not retain previous illuminated lamps')
+check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(batteryBody().color, dark), 'missing snapshot does not retain previous illuminated lamps')
 check(findText('Recovering --') and findText('--'), 'missing native historical fields remain visibly unavailable')
 
 snapshots[1] = fixture('vanilla')
 snapshots[1].soc, snapshots[1].recovering, snapshots[1].smActive, snapshots[1].boost = 0, false, false, false
 render()
 check(findText('0%') and not findText('Recovering --'), 'valid zero battery and false recovery differ from missing data')
-check(colorEquals(matchingFill(findText('BOOST')), dark), 'valid false manual boost is dark')
+check(colorEquals(batteryBody().color, dark), 'valid false manual boost is dark')
 snapshots[1].soc, snapshots[1].strategyName, snapshots[1].smActive, snapshots[1].boost = 0.87, 'HIGH', true, true
 snapshots[1].valid = { recovering = true }
 render()
 check(not findText('87%') and not findText('HIGH'), 'raw values with invalid fields never become valid readouts')
-check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(matchingFill(findText('BOOST')), dark), 'raw true states cannot illuminate without validity')
+check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(batteryBody().color, dark), 'raw true states cannot illuminate without validity')
+
+-- Battery glyph: state and hue from the current update, body from the Boost button, fill anchored to the
+-- right wall, easing of the ring brightness only.
+cfg.batterySmoothing = false
+local redHue = rgbm(245 / 255, 45 / 255, 33 / 255, 1)
+local function batteryFill()
+  for _, command in ipairs(commands) do
+    if command.kind == 'rect' and (colorEquals(command.color, batteryColor) or colorEquals(command.color, yellow))
+      and command.y > 270 and command.y < 290 and command.x > 126 then return command end
+  end
+end
+snapshots[1] = fixture('pro')                                   -- kw 175, boost true
+render()
+check(sameHue(batteryRing().color, boostColor) and near(batteryRing().color.m, 0.35 + 0.65 * 0.5), 'Boost while deploying: magenta ring at |kW| / 350 brightness')
+check(colorEquals(batteryBody().color, boostColor), 'Boost button colours the body')
+snapshots[1].boost, snapshots[1].kw = false, 200
+render()
+check(sameHue(batteryRing().color, green) and colorEquals(batteryBody().color, dark), 'deploying without Boost: green ring, dark body')
+local fill = batteryFill()
+check(fill and near(fill.x + fill.w, 215.5) and near(fill.w, 87 * 0.75), 'charge fill is anchored to the right wall and scaled by SoC')
+snapshots[1].kw = -200
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 200 / 350), 'harvesting: red ring')
+local function boltColors()
+  local colors = {}
+  for _, command in ipairs(commands) do
+    if command.kind == 'quad' and not colorEquals(command.color, rgbm(0, 0, 0, 0.85)) then colors[#colors + 1] = command.color end
+  end
+  return colors
+end
+check(#boltColors() == 2 and sameHue(boltColors()[1], redHue), 'the bolt takes the flow hue')
+snapshots[1].boost = true
+render()
+check(sameHue(batteryRing().color, redHue) and colorEquals(batteryBody().color, boostColor), 'Boost held while harvesting: magenta body, red ring')
+check(#boltColors() == 2 and colorEquals(boltColors()[1], rgbm(1, 1, 1, 1)) and colorEquals(boltColors()[2], rgbm(1, 1, 1, 1)), 'the bolt is white on the magenta Boost body')
+snapshots[1].boost, snapshots[1].kw = false, 3
+render()
+check(colorEquals(batteryRing().color, batteryIdle) and quads() == 4, 'inside the 5 kW deadband the ring is idle and the bolt stays')
+snapshots[1].kw, snapshots[1].valid.kw = 300, false
+render()
+check(colorEquals(batteryRing().color, batteryIdle) and batteryDigits('75%'), 'unknown power leaves the ring idle while the charge is shown')
+snapshots[1].valid.kw, snapshots[1].valid.soc = true, false
+render()
+check(batteryDigits('--') and quads() == 0 and not batteryFill(), 'invalid charge shows -- without fill or bolt')
+check(sameHue(batteryRing().color, green), 'a valid flow still colours the ring while the charge is invalid')
+snapshots[1].valid.soc, snapshots[1].soc, snapshots[1].kw = true, 0.08, 250
+render()
+check(batteryDigits('8%') and colorEquals(batteryDigits('8%').color, yellow) and colorEquals(batteryFill().color, yellow), 'low charge turns the fill and digits amber')
+snapshots[1].soc = 0.104
+render()
+check(batteryDigits('10%') and colorEquals(batteryDigits('10%').color, yellow) and colorEquals(batteryFill().color, yellow), 'the low-charge rule follows the displayed figure: 10% is amber')
+snapshots[1].soc = 0.105
+render()
+check(batteryDigits('11%') and colorEquals(batteryDigits('11%').color, rgbm(1, 1, 1, 1)) and colorEquals(batteryFill().color, batteryColor), '11% is drawn in the normal colours')
+snapshots[1] = fixture('vanilla')                                -- recovering true, boost true
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'native recovery: red ring at the declared fixed intensity')
+check(colorEquals(batteryBody().color, boostColor), 'native Boost button colours the body only')
+snapshots[1].recovering = false
+render()
+check(colorEquals(batteryRing().color, batteryIdle), 'native car without recovery: idle ring, never green')
+snapshots[1] = fixture('drs')
+render()
+check(not batteryBody() and quads() == 0, 'conventional cars draw no battery glyph')
+cfg.batterySmoothing = true
+sim.dt = 0.015
+snapshots[1] = fixture('pro')
+snapshots[1].index, snapshots[1].boost, snapshots[1].kw = 7, false, 350
+render()
+check(near(batteryRing().color.m, 1), 'easing restarts from the raw value on a new car')
+snapshots[1].kw = 100
+render()
+local eased = batteryRing().color.m
+check(sameHue(batteryRing().color, green) and eased > 0.9 and eased < 1, 'ring brightness eases towards the new value')
+sim.dt = 0
+snapshots[1].kw = -100
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 100 / 350), "hue changes at once; a paused replay draws the shown frame's own brightness")
+cfg.batterySmoothing = false
+render()
+check(near(batteryRing().color.m, 0.35 + 0.65 * 100 / 350), 'easing off draws the raw brightness')
+cfg.batterySmoothing, sim.dt = true, 0.015
+local lightHarvest = 0.35 + 0.65 * 20 / 350
+snapshots[1].kw = 350
+for _ = 1, 30 do render() end
+check(batteryRing().color.m > 0.98, 'eased brightness settles at full power')
+snapshots[1].kw = 0
+for _ = 1, 40 do render() end
+check(colorEquals(batteryRing().color, batteryIdle), 'idle frames draw the idle ring while the easing decays')
+snapshots[1].kw = -20
+render()
+check(sameHue(batteryRing().color, redHue) and batteryRing().color.m <= lightHarvest + 0.001, 'a flow after an idle stretch never inherits an earlier brightness')
+snapshots[1].kw = 350
+for _ = 1, 30 do render() end
+snapshots[1].valid.kw = false
+render()
+snapshots[1].valid.kw, snapshots[1].kw = true, -20
+render()
+check(sameHue(batteryRing().color, redHue) and batteryRing().color.m <= lightHarvest + 0.001, 'an invalid update clears the easing at once')
+snapshots[1].kw = 350
+for _ = 1, 30 do render() end
+for _ = 1, 30 do script.update(0.016) end   -- HUD window hidden: updates without drawing
+snapshots[1].kw = -20
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, lightHarvest), 'after a stretch without drawing the easing restarts from the raw value')
+cfg.batterySmoothing = false
+sim.dt = nil
+print('Battery glyph: flow states, Boost body, right-anchored fill, low charge, native and conventional cars, easing passed')
 
 snapshots[1] = fixture('pro')
 snapshots[1].soc, snapshots[1].kw, snapshots[1].strat = 0, 0, 0
 snapshots[1].valid = { soc = true, kw = true, strat = true }
 render()
-check(findText('0%  0.00 / 4 MJ') and findText('0.00 MJ'), 'invalid raw ESOC cannot override valid zero SOC in Pro energy readouts')
+check(findText('0%  0.00 / 4 MJ') and batteryDigits('0%') and not batteryFill(), 'invalid raw ESOC cannot override valid zero SOC in Pro energy readouts')
 check(findText('+0 kW') and not textContains('cap 350') and not textContains('Deploy 1.25'), 'partial Pro fields show valid zero and suppress invalid cap and lap values')
 check(findText('STRAT 0   split --') and findText('PU --'), 'partial Pro strategy retains valid zero and marks missing split/PU')
 
@@ -350,10 +497,10 @@ local function visibleBrake()
   return 0
 end
 local function recoveryLit()
-  return colorEquals(matchingFill(findText('Recovering')), rgbm(0.65, 0.55, 1, 1))
+  return colorEquals(matchingFill(findText('Recovering')), red)
 end
 
-cfg.scale, cfg.lang, cfg.showPanel, cfg.showBars, cfg.lockPlayer, cfg.followFocused = 1, 'en', true, true, false, true
+cfg.scale, cfg.lang, cfg.showPanel, cfg.showBattery, cfg.lockPlayer, cfg.followFocused = 1, 'en', true, true, false, true
 sim.focusedCar, sim.closelyFocusedCar, sim.isReplayActive, sim.dt = 0, 0, false, 0.015
 -- gas, brake, gear, recovering: full throttle, one-frame auto-shift cut and partial frame, braking,
 -- auto-blip while the old gear is still shown, engagement and decay, plus single-update recovery pulses.

@@ -1,7 +1,7 @@
 # Data contract
 
-This document describes version 0.9.25 (a documentation update of the 0.9.2 vehicle-compatibility
-release; the app's behaviour is unchanged) and the immutable v0.9.1 Pro replay contract.
+This document describes version 0.10.0 (the in-dial battery glyph; the adapters, validity rules and
+replay streams are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract.
 Reference runtime: CSP build 4116. Actual validation and outstanding in-game checks are recorded
 in [COMPATIBILITY.md](COMPATIBILITY.md).
 
@@ -52,6 +52,40 @@ The periodic diagnostics line reports `replayGaps=<count>@<frame>`: holes of up 
 frames in recorded native history during forward playback. The count restarts tracking after
 replay jumps, backward or large forward steps and car changes. Recordings made with the current
 writer report 0. The counter never affects drawing.
+
+## Battery glyph
+
+The glyph in the dial draws the current update only. Nothing is smoothed, delayed or held, apart
+from the one decorative easing declared at the end of this section.
+
+- **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
+  is anchored to the right wall, so deploying moves its edge to the right and harvesting to the
+  left. At or below 10 % the fill and digits turn amber; red is never used for a level.
+- **Body**: magenta while the manual Boost command is valid and true (`isHybridBoostActive` on the
+  Pro, `kersButtonPressed` on the native FA26), otherwise the track colour. This is the former
+  `BOOST` badge's rule; the badge itself returns when the glyph is switched off. On a magenta body
+  the bolt is drawn white so it stays visible; the ring keeps the flow hue.
+- **Ring, terminal and bolt (Pro)**: the sign of `rearMotorPowerKW` beyond a ±5 kW deadband decides
+  the state: red below −5 kW (harvesting, including super-clipping at full throttle), green above
+  +5 kW (deploying), magenta above +5 kW while Boost is active. The intensity is
+  `|rearMotorPowerKW| / 350` of the same update: ring alpha 0.35 + 0.65 × i, ring width 2 + i units,
+  halo alpha proportional to i². `mgukMaxPower` is never used, because it reads 0 or −350 during
+  super-clipping live and is clamped to 0 in replays. Overtake, Charge mode, PL / PLP and the pit
+  limiter never colour the ring; they remain chips in the panel.
+- **Native FA26**: red ring at a fixed intensity of 0.6 while `recovering` is valid and true (a
+  recovery status, not a measured power); never green, because deployment is not observable; the
+  button colours the body only.
+- **Unknown or invalid**: while `kw` is invalid (Pro live before the CAN map appears, replay slots
+  without the app stream) the ring is idle white; while `soc` is invalid the glyph shows `--` with
+  no fill and no bolt. Nothing is retained from the previous update. Conventional cars draw no glyph.
+- **Easing** (setting, on by default): the ring brightness, width and halo may approach the current
+  intensity with a 120 ms time constant, advanced by `sim.dt` (following replay speed). It is
+  evaluated on every drawn update: idle frames ease it down to 0, an unknown flow clears it at once,
+  a paused replay (`sim.dt` 0) draws the shown frame's raw intensity, and a car change or a stretch
+  without drawing (hidden window) restarts it from the raw value, so a new flow never inherits an
+  earlier brightness. The state and hue are never eased: a state the data reports is drawn in that
+  same update, and invalid data clears it immediately. With the setting off, the raw intensity is
+  drawn.
 
 ## VRC telemetry bus
 
