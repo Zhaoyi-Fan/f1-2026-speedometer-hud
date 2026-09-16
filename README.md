@@ -20,7 +20,7 @@ cut and the downshift auto-blip ([known issues](docs/KNOWN-ISSUES.md)).
 
 ![demo](docs/demo.gif)
 
-*Demo recorded before the v0.9.1 dial update; the updated dial is illustrated below.*
+*Demo recorded with v0.9.38: an FA26 Pro replay at Silverstone.*
 
 The app runs in Custom Shaders Patch (CSP). It combines a MultiViewer-style dial with the car's
 energy telemetry, so you can monitor deployment and harvesting while driving or watching a replay.
