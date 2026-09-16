@@ -2,6 +2,27 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
+## At a glance
+
+| Version | In one line |
+| --- | --- |
+| 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
+| 0.9.36 | **New:** the glyph reads `BOOST` while the command is held; a single-digit charge stays visible beside it |
+| 0.9.35 | **New:** the standard FA26 shows its own deployment — green ring, a `Deploying` chip, recorded into replays |
+| 0.9.3 | **Changed:** a battery glyph inside the dial replaces the two side bars |
+| 0.9.25 | **Changed:** documentation and packaging only |
+| 0.9.2 | **New:** a display per vehicle, and replay recording for the standard FA26 and the FA25 |
+| 0.9.1 | **Changed:** 0–360 km/h scale, curved arc labels, heavier dial lettering |
+| 0.9.0 | First public pre-release |
+| 0.8 | **New:** the `BOOST` badge under `SM` / `OT` |
+| 0.7 | **Changed:** raw values moved behind a log-mode setting |
+| 0.6 | **New:** English and 简体中文 |
+| 0.5 | **New:** side bars for charge and lap harvest |
+| 0.4 | **Changed:** the battery reads usable energy |
+| 0.3 | **New:** negative MGU-K caps drawn as super-clipping |
+| 0.2 | **Changed:** 1-based PU names, opaque arc tracks, a persistent diagnostics file |
+| 0.1 | First build |
+
 ## 0.9.37 — 2026-09-16
 
 Fixes a recording defect that has been in the app since 0.9.2: whenever Straight Mode was engaged, the
@@ -21,7 +42,7 @@ MGU-K, lap energy and strategy for as long as the wings were open.
   (`proSkip=<count>:<field>@<car>`). The old stream has no per-field validity, so one missing field
   still costs a whole frame; from now on it says so instead of failing silently.
 
-
+## 0.9.36 — 2026-09-16
 
 Brings the word `BOOST` back, inside the glyph. Everything else, including the adapters and both
 replay streams, is exactly as in 0.9.35.

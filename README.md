@@ -11,7 +11,7 @@ that command is held. **0.9.35** gave the
 standard FA26 its own deployment indication on the battery glyph that
 **0.9.3** introduced in place of the two side bars; the word appears on both cars, the Pro adapter is
 that of 0.9.3, the standard car's compact panel gains a second chip, and both replay-stream layouts
-are unchanged from 0.9.2. The [changelog](CHANGELOG.md) lists what each version changed. See
+are unchanged from 0.9.2. The [changelog](CHANGELOG.md) opens with one line per version and then the detail. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
 is still pending.
 The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
