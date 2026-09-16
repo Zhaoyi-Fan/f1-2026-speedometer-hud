@@ -126,7 +126,7 @@ ui = {
 script = {}
 loadHud()
 check(savedLogWrites == 1, 'only the existing launch diagnostic is written to the in-memory stub')
-check(cfg.batteryTerminal == 'left', 'the battery terminal is on the left unless the user chooses otherwise')
+check(cfg.batteryTerminal == 'right', 'the battery terminal is on the right unless the user chooses otherwise')
 
 local function fixture(kind)
   local result = { kind = kind, name = 'Synthetic', source = 'fixture', index = 0,
@@ -196,11 +196,12 @@ local function assertBounds(context)
     end
   end
 end
--- Battery glyph geometry at scale 1, terminal on the left (default): body (126, 270) 92 x 20, digits box
--- (142, 270) 72 x 20, nub (122, 276) 4 x 8. The right terminal is the mirror image about x = 170: body
--- (122, 270), digits box (126, 270), nub (214, 276). The helpers follow the current setting.
+-- Battery glyph geometry at scale 1, terminal on the right (the default since 0.9.38): body (122, 270)
+-- 92 x 20, digits box (126, 270) 72 x 20, nub (214, 276) 4 x 8. The left terminal (0.9.3-0.9.37) is the
+-- mirror image about x = 170: body (126, 270), digits box (142, 270), nub (122, 276). The helpers follow
+-- the current setting, including its fallback for unrecognised values.
 local BODY_X, DIGITS_X = { left = 126, right = 122 }, { left = 142, right = 126 }
-local function terminal() return cfg.batteryTerminal == 'right' and 'right' or 'left' end
+local function terminal() return cfg.batteryTerminal == 'left' and 'left' or 'right' end
 local batteryColor = rgbm(0.91, 0.92, 0.93, 0.92)
 local batteryIdle = rgbm(1, 1, 1, 0.30)
 local yellow = rgbm(0.95, 0.75, 0.15, 1)
@@ -288,6 +289,8 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
     end
   end
 end
+-- The flow-state section below spells out the left terminal's coordinates; the right terminal's follow in
+-- the mirror section, which compares the two shape by shape.
 cfg.batteryTerminal = 'left'
 print('UI matrix: ' .. tostring(cases) .. ' vehicle/language/scale/panel/battery/terminal combinations passed')
 
@@ -317,7 +320,7 @@ check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(batteryBod
 check(not findText('BOOST'), 'an unverified Boost flag never prints the word either')
 
 -- Battery glyph: state and hue from the current update, body from the Boost button, fill anchored to the
--- right wall, easing of the ring brightness only.
+-- wall opposite the terminal (here the left terminal, so the right wall), easing of the ring brightness only.
 cfg.batterySmoothing = false
 local redHue = rgbm(245 / 255, 45 / 255, 33 / 255, 1)
 local function batteryFill()
@@ -503,12 +506,12 @@ render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, lightHarvest), 'after a stretch without drawing the easing restarts from the raw value')
 cfg.batterySmoothing = false
 sim.dt = nil
-print('Battery glyph: flow states, Boost body, right-anchored fill, low charge, native and conventional cars, easing passed')
+print('Battery glyph (left terminal): flow states, Boost body, right-anchored fill, low charge, native and conventional cars, easing passed')
 
--- Terminal on the right: the mirror image of the default glyph about the dial's vertical axis. Every
--- shape and text box is mirrored, and text keeps its reading direction, so End and Start swap; the
--- bolt is moved as a whole, not flipped; its black shadow and the digits' outline copies keep their
--- own offsets from what they belong to.
+-- The two terminal sides are mirror images of each other about the dial's vertical axis. Every shape and
+-- text box is mirrored, and text keeps its reading direction, so End and Start swap; the bolt is moved as
+-- a whole, not flipped; its black shadow and the digits' outline copies keep their own offsets from what
+-- they belong to.
 local outlineColor = rgbm(0, 0, 0, 0.85)
 local MIRROR_ALIGN = { [ui.Alignment.Start] = ui.Alignment.End, [ui.Alignment.Center] = ui.Alignment.Center,
   [ui.Alignment.End] = ui.Alignment.Start }
@@ -612,7 +615,7 @@ for _, scale in ipairs({ 0.5, 1, 2.5 }) do
   end
 end
 
--- The same layout spelled out at scale 1.
+-- The default right-terminal layout spelled out at scale 1.
 cfg.scale, cfg.batteryTerminal = 1, 'right'
 snapshots[1] = fixture('pro')
 snapshots[1].boost, snapshots[1].kw = false, 200
@@ -647,8 +650,9 @@ check(batteryDigits('--') and batteryDigits('--').horizontal == ui.Alignment.Sta
 cfg.batteryTerminal = 'up'
 snapshots[1] = fixture('pro')
 render()
-check(boxAt('rect', 126, 270, 92, 20) and boxAt('rect', 122, 276, 4, 8), 'any stored value other than right draws the default left terminal')
-cfg.batteryTerminal = 'left'
+check(boxAt('rect', 122, 270, 92, 20) and boxAt('rect', 214, 276, 4, 8) and not boxAt('rect', 126, 270, 92, 20),
+  'any stored value other than left draws the default right terminal')
+cfg.batteryTerminal = 'right'
 print('Battery terminal: ' .. tostring(mirrorCases) .. ' mirrored state/scale pairs and the right-terminal layout passed')
 
 -- Settings window: the terminal side is a pair of radio buttons right under the glyph switch.
@@ -673,49 +677,58 @@ local function widgetAt(kind, label)
     if item.kind == kind and item.label == label then return k, item end
   end
 end
-cfg.lang, cfg.batteryTerminal, cfg.showDiagText = 'en', 'left', false
+local leftButton, rightButton = 'Left##batteryTerminal', 'Right##batteryTerminal'
+local function sides()
+  local _, left = widgetAt('radio', leftButton)
+  local _, right = widgetAt('radio', rightButton)
+  return left, right
+end
+cfg.lang, cfg.batteryTerminal, cfg.showDiagText = 'en', 'right', false
 openSettings()
 local glyphRow = widgetAt('checkbox', 'Battery glyph in the dial (off: BOOST badge)')
 local labelRow = widgetAt('text', 'Battery terminal:')
-local _, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
-local _, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
+local leftRadio, rightRadio = sides()
 check(glyphRow and labelRow == glyphRow + 2 and widgets[glyphRow + 1].kind == 'align',
   'the terminal row follows the glyph switch, its label aligned with the buttons')
-check(leftRadio and leftRadio.state == true and rightRadio and rightRadio.state == false, 'the default side is shown as Left')
+check(leftRadio and leftRadio.state == false and rightRadio and rightRadio.state == true, 'the default side is shown as Right')
 local tips = 0
 for _, item in ipairs(widgets) do
-  if item.kind == 'tooltip' and item.label:find('mirrored', 1, true) then tips = tips + 1 end
+  if item.kind == 'tooltip' and item.label:find('Right (default)', 1, true) and item.label:find('mirror', 1, true) then tips = tips + 1 end
 end
-check(tips == 3, 'the label and both buttons explain the choice on hover')
+check(tips == 3, 'the label and both buttons explain the choice on hover, naming the default')
 cfg.batteryTerminal = 'up'
 openSettings()
-_, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
-_, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
-check(leftRadio.state == true and rightRadio.state == false, 'an unknown stored value is shown as the Left it draws')
-openSettings('Right##batteryTerminal')
-check(cfg.batteryTerminal == 'right', 'choosing Right stores the right terminal')
+leftRadio, rightRadio = sides()
+check(leftRadio.state == false and rightRadio.state == true, 'an unknown stored value is shown as the Right it draws')
+openSettings(leftButton)
+check(cfg.batteryTerminal == 'left', 'choosing Left stores the left terminal')
 openSettings()
-_, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
-_, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
-check(leftRadio.state == false and rightRadio.state == true, 'the stored side is shown')
+leftRadio, rightRadio = sides()
+check(leftRadio.state == true and rightRadio.state == false, 'the stored side is shown')
 snapshots[1] = fixture('pro')
 render()
-check(batteryBody() and near(batteryBody().x, 122), 'the dial draws the stored side on the next frame')
-openSettings('Left##batteryTerminal')
-check(cfg.batteryTerminal == 'left', 'choosing Left restores the default')
-openSettings('Right##batteryTerminal')
+check(batteryBody() and near(batteryBody().x, 126) and boxAt('rect', 122, 276, 4, 8), 'the dial draws the stored side on the next frame')
+openSettings(rightButton)
+check(cfg.batteryTerminal == 'right', 'choosing Right restores the default')
+render()
+check(batteryBody() and near(batteryBody().x, 122) and boxAt('rect', 214, 276, 4, 8), 'and the dial follows back')
+openSettings(leftButton)
 cfg.lang = 'zh'
+leftButton, rightButton = '左##batteryTerminal', '右##batteryTerminal'
 openSettings()
-_, leftRadio = widgetAt('radio', '左##batteryTerminal')
-_, rightRadio = widgetAt('radio', '右##batteryTerminal')
-check(widgetAt('text', '电池接头：') and leftRadio and rightRadio and rightRadio.state == true, 'the terminal row is translated')
+leftRadio, rightRadio = sides()
+check(widgetAt('text', '电池接头：') and leftRadio and rightRadio and leftRadio.state == true and rightRadio.state == false,
+  'the terminal row is translated')
 tips = 0
 for _, item in ipairs(widgets) do
-  if item.kind == 'tooltip' and item.label:find('镜像', 1, true) then tips = tips + 1 end
+  if item.kind == 'tooltip' and item.label:find('右（默认）', 1, true) and item.label:find('镜像', 1, true) then tips = tips + 1 end
 end
 check(tips == 3, 'the hover text is translated')
-openSettings('左##batteryTerminal')
+openSettings(rightButton)
+check(cfg.batteryTerminal == 'right', 'the translated Right button stores the same value')
+openSettings(leftButton)
 check(cfg.batteryTerminal == 'left', 'the translated Left button stores the same value')
+openSettings(rightButton)
 -- the rest of the window, including the log-mode readout, still runs
 cfg.lang, cfg.showDiagText = 'en', true
 snapshots[1].full = true

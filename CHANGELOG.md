@@ -6,7 +6,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 | Version | In one line |
 | --- | --- |
-| 0.9.38 | **New:** a setting puts the battery glyph's terminal on the left (default) or the right |
+| 0.9.38 | **Changed:** the battery glyph faces right, like a common battery icon; a new setting turns it back to the left |
 | 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
 | 0.9.36 | **New:** the glyph reads `BOOST` while the command is held; a single-digit charge stays visible beside it |
 | 0.9.35 | **New:** the standard FA26 shows its own deployment — green ring, a `Deploying` chip, recorded into replays |
@@ -26,22 +26,23 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 ## 0.9.38 — 2026-09-16
 
-Lets the battery glyph face either way. The default is unchanged, so the dial looks exactly as in
-0.9.37 until the setting is changed; the adapters and both replay streams are those of 0.9.37.
+Turns the battery glyph round to face the way most battery icons do, and makes the side a setting.
+The adapters and both replay streams are those of 0.9.37.
 
-- New setting "Battery terminal: Left / Right", directly under "Battery glyph in the dial". Right
-  draws the glyph as the mirror image of the default about the dial's vertical axis, the way most
-  battery icons face: the terminal closes the slot on the right, the fill is anchored to the left wall
-  and drains towards it (deploying moves its edge to the left, harvesting to the right), the bolt sits
-  beside the terminal and the percentage is left-aligned at the other end. A single-digit charge under
-  Boost then reads number, `BOOST`, bolt.
-- Only positions change. Colours, states, brightness, the word `BOOST`, the low-charge rule and the
-  data behind them are the same on both sides; the text is never reversed, and the bolt keeps its
-  shape and its shadow. The slot and the throttle and brake track caps beside it are symmetric about
-  the dial's centre line, so the mirrored glyph keeps every clearance of the default one.
-- The energy panel is not affected. With the terminal on the right, the glyph's fill edge moves the
+- The glyph now faces right by default: the terminal closes the slot on the right, the fill is
+  anchored to the left wall and drains towards it (deploying moves its edge to the left, harvesting to
+  the right), the bolt sits beside the terminal and the percentage is left-aligned at the other end. A
+  single-digit charge under Boost reads number, `BOOST`, bolt.
+- New setting "Battery terminal: Left / Right", directly under "Battery glyph in the dial". Left
+  restores the glyph of 0.9.3 to 0.9.37 exactly, including a fill edge that moves the same way as the
+  panel's MGU-K bar. Hovering the setting explains the difference. A stored value the app does not
+  recognise draws the default right-facing glyph.
+- The two sides are mirror images about the dial's vertical axis, and only positions change: colours,
+  states, brightness, the word `BOOST`, the low-charge rule and the data behind them are identical, the
+  text is never reversed, and the bolt keeps its shape and its shadow. The slot and the throttle and
+  brake track caps beside it are symmetric about that axis, so both sides keep the same clearances.
+- The energy panel is not affected. With the default right-facing glyph, the fill edge moves the
   opposite way to the panel's MGU-K bar, which keeps deployment on its right.
-- Hovering the setting explains the difference. An unrecognised stored value draws the default side.
 
 ## 0.9.37 — 2026-09-16
 

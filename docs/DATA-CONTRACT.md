@@ -62,12 +62,12 @@ The glyph in the dial draws the current update only. Nothing is smoothed, delaye
 from the one decorative easing declared at the end of this section.
 
 - **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
-  is anchored to the wall opposite the terminal. With the terminal on the left (the default) that is
-  the right wall, so deploying moves its edge to the right and harvesting to the left. With the
-  terminal on the right (a display setting) the whole glyph is drawn as the mirror image about the
-  dial's vertical axis, so the edge moves the other way, the bolt sits beside the terminal and the
-  percentage at the left end; text is placed, never reversed. The side changes positions only, never
-  a state, colour, brightness or value. At or below 10 % the fill and digits turn amber; red is
+  is anchored to the wall opposite the terminal, whose side is a display setting. With the terminal on
+  the right (the default since 0.9.38) that is the left wall, so deploying moves the fill edge to the
+  left and harvesting to the right; the bolt sits beside the terminal and the percentage at the left
+  end. With the terminal on the left (the only layout before 0.9.38) the whole glyph is drawn as the
+  mirror image about the dial's vertical axis, so the edge moves the other way; text is placed, never
+  reversed. The side changes positions only, never a state, colour, brightness or value. At or below 10 % the fill and digits turn amber; red is
   never used for a level. While the Boost command is held the percentage gives way to the word
   `BOOST` (the badge's own placement, centred on the body), and an unknown charge then reads `BOOST`
   rather than `--`; at or below 9 % the number returns beside the word, still amber, and the word

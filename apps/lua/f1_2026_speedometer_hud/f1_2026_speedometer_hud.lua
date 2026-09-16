@@ -20,12 +20,13 @@ local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
 
 -- Battery glyph in the dial (design units, v0.9.3). It takes the 96 x 20 slot of the former BOOST pill at
 -- (122, 270), the one row whose clearance from the throttle / brake track start caps was verified in game
--- (see drawDial). By default the terminal nub is on the LEFT and the charge fill is anchored to the RIGHT
--- wall: deploying moves the fill edge to the right and harvesting to the left, the same directions as the
--- panel's MGU-K bar. With the terminal on the right (setting `batteryTerminal`) every shape is drawn as
--- the mirror image about the dial's vertical axis (x = 170), where the slot and both track caps are
--- symmetric, so every clearance is kept; the fill then drains to the left like a common battery icon.
--- Text is placed as the mirror but never reversed.
+-- (see drawDial). The terminal side is a setting (`batteryTerminal`). By default (since 0.9.38) the terminal
+-- nub is on the RIGHT and the charge fill is anchored to the LEFT wall, like a common battery icon, so the
+-- fill drains to the left. With the terminal on the LEFT (the only layout of 0.9.3-0.9.37) the fill is
+-- anchored to the RIGHT wall: deploying moves its edge to the right and harvesting to the left, the same
+-- directions as the panel's MGU-K bar. The two layouts are mirror images about the dial's vertical axis
+-- (x = 170), where the slot and both track caps are symmetric, so both keep the same clearances. Text is
+-- placed as the mirror but never reversed.
 -- The body colour follows the Boost button (the pill's own rule); the ring, nub and bolt follow the
 -- MGU-K flow of the current update: the Pro's signed power, or the standard car's recovery status
 -- and the deployment share its delivery controller requests.
@@ -44,7 +45,7 @@ local cfg = ac.storage({
   scale = 1.0,
   showPanel = true,
   showBattery = true,
-  batteryTerminal = 'left',   -- 'left' or 'right'; any other value draws the left one
+  batteryTerminal = 'right',  -- 'right' or 'left'; any other value draws the default right one
   batterySmoothing = true,
   followFocused = true,
   lockPlayer = false,
@@ -120,8 +121,8 @@ local STR = {
   terminalLeft = { en = 'Left', zh = '左' },
   terminalRight = { en = 'Right', zh = '右' },
   terminalTip = {
-    en = 'Left (default): deploying moves the fill edge to the right, like the MGU-K bar.\nRight: a common battery icon; the fill drains to the left.\nThe whole glyph is mirrored; the text keeps its reading direction.',
-    zh = '左（默认）：部署时填充边缘向右退，与 MGU-K 条方向一致。\n右：常见的电池图标，电量向左减少。\n整个图标左右镜像，文字方向不变。',
+    en = 'Right (default): the usual battery icon; the fill drains to the left.\nLeft: deploying moves the fill edge to the right, like the MGU-K bar.\nSwitching mirrors the whole glyph; the text keeps its reading direction.',
+    zh = '右（默认）：常见的电池图标，电量向左减少。\n左：部署时填充边缘向右退，与 MGU-K 条方向一致。\n切换时整个图标左右镜像，文字方向不变。',
   },
   batterySmooth = { en = 'Ease the battery ring brightness (120 ms, decorative)', zh = '电池环亮度平滑（120 ms，仅视觉）' },
   follow = { en = 'Follow camera-focused car', zh = '跟随镜头聚焦的车' },
@@ -585,9 +586,10 @@ local function drawBattery(S, ox, oy, s, fontB)
   else
     i = batteryIntensity(S, raw or 0)   -- idle frames ease the brightness down to 0
   end
-  -- Body box, beside the nub. With the terminal on the right every position below is the mirror image
-  -- of the default one about the dial's vertical axis.
-  local right = cfg.batteryTerminal == 'right'
+  -- Body box, beside the nub. Positions below are written for the left terminal; the right terminal (the
+  -- default, and whatever an unrecognised stored value falls back to) takes their mirror image about the
+  -- dial's vertical axis.
+  local right = cfg.batteryTerminal ~= 'left'
   local x0, y0 = ox + (right and BAT.x or BAT.x + BAT.nubW) * s, oy + BAT.y * s
   local w, h = (BAT.w - BAT.nubW) * s, BAT.h * s
   local p1, p2 = vec2(x0, y0), vec2(x0 + w, y0 + h)
@@ -631,8 +633,8 @@ local function drawBattery(S, ox, oy, s, fontB)
   -- While the Boost command is held the body reads BOOST, exactly as the badge this glyph replaced;
   -- the fill still shows the level. The number returns beside the word once the displayed charge is
   -- down to a single digit, where it is the reading that matters, and is then always the amber one.
-  -- The number sits at the anchored end, clear of the bolt: right-aligned by default, left-aligned
-  -- when the terminal is on the right.
+  -- The number sits at the anchored end, clear of the bolt: left-aligned with the terminal on the right,
+  -- right-aligned with it on the left.
   local dx, dw, align = x0 + 16 * s, w - 20 * s, ui.Alignment.End
   if right then dx, align = x0 + 4 * s, ui.Alignment.Start end
   local digits = socOk and (socPercent(soc) .. '%') or nil
@@ -900,10 +902,10 @@ function script.windowSettings(dt)
   ui.text(L('batteryTerminal'))
   hoverTip('terminalTip')
   ui.sameLine(0, 12)
-  if ui.radioButton(L('terminalLeft') .. '##batteryTerminal', cfg.batteryTerminal ~= 'right') then cfg.batteryTerminal = 'left' end
+  if ui.radioButton(L('terminalLeft') .. '##batteryTerminal', cfg.batteryTerminal == 'left') then cfg.batteryTerminal = 'left' end
   hoverTip('terminalTip')
   ui.sameLine(0, 16)
-  if ui.radioButton(L('terminalRight') .. '##batteryTerminal', cfg.batteryTerminal == 'right') then cfg.batteryTerminal = 'right' end
+  if ui.radioButton(L('terminalRight') .. '##batteryTerminal', cfg.batteryTerminal ~= 'left') then cfg.batteryTerminal = 'right' end
   hoverTip('terminalTip')
   if ui.checkbox(L('batterySmooth'), cfg.batterySmoothing) then cfg.batterySmoothing = not cfg.batterySmoothing end
   if ui.checkbox(L('follow'), cfg.followFocused) then cfg.followFocused = not cfg.followFocused end

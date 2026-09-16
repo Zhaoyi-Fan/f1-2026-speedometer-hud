@@ -5,8 +5,8 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.38** adds a setting for the side of the battery glyph's terminal: left, as before, or
-right, which draws the glyph as its mirror image. **0.9.37** fixes a recording defect: Pro replays
+Version **0.9.38** turns the battery glyph to face right by default, like a common battery icon, and
+adds a setting that puts its terminal back on the left. **0.9.37** fixes a recording defect: Pro replays
 recorded since 0.9.2 had no energy data at all in the frames where Straight Mode was engaged.
 **0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
 standard FA26 its own deployment indication on the battery glyph that
@@ -55,11 +55,11 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 | Battery glyph | `--` with an idle ring | body magenta and reading `BOOST` while the Boost button is held / toggled · ring and terminal red while harvesting, green while deploying, magenta while Boost deploys, brighter with more power · bolt in the same hue, white on the magenta body · fill and digits amber when the figure is 10 % or less |
 
 **Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below `SM` / `OT`.
-By default the terminal is on the left and the fill is anchored to the right, so deploying moves the
-fill edge to the right and harvesting moves it to the left, the same directions as the panel's MGU-K
-bar. Setting the terminal to the right draws the mirror image instead, facing the way most battery
-icons do: the fill is anchored to the left and drains towards it, the bolt sits beside the terminal and
-the percentage at the other end. The text is never reversed, and nothing but the placement changes. The ring
+The terminal is on the right by default, the way most battery icons face: the fill is anchored to the
+left and drains towards it, the bolt sits beside the terminal and the percentage at the other end.
+Setting the terminal to the left draws the mirror image, the only layout before 0.9.38: the fill is
+anchored to the right, so deploying moves its edge to the right and harvesting to the left, the same
+directions as the panel's MGU-K bar. The text is never reversed, and nothing but the placement changes. The ring
 around it shows the MGU-K flow of the current update, with brightness, width and a small halo
 following the power on the Pro and the deployment request on the standard FA26. Nothing animates on
 its own apart from the optional 120 ms brightness easing
@@ -98,7 +98,7 @@ No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigne
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.38 dial state illustrations, battery terminal on the left](docs/dial-states.png)
+![v0.9.38 dial state illustrations, battery terminal on the right (the default)](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -139,7 +139,8 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.38**. The dial no longer has side
+replay and check that the settings window shows version **0.9.38**. From this version the battery
+glyph faces right; set Display › Battery terminal to Left for the earlier look. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.
@@ -158,7 +159,7 @@ has no background; hover it to get the title bar and drag it where you want it.
 
 - Open the app's settings (gear icon on the HUD's floating title bar).
 - **Display**: scale, show the energy panel, battery glyph in the dial (off restores the `BOOST`
-  badge), battery terminal side (left or right; hover it for the difference), ease the battery ring
+  badge), battery terminal side (right by default; hover it for the difference), ease the battery ring
   brightness, follow the camera-focused car, lock to the player car, dial font (default Bahnschrift),
   Chinese label font (default Microsoft YaHei UI).
 - **Language**: switch between English and 简体中文. Abbreviations such as SM, OT, BOOST, PL,
@@ -206,7 +207,7 @@ extra files; the diagnostics log and the CSP settings storage are separate from 
 | Scale | 1.00 | 0.5 to 2.5 |
 | Show energy panel | on | also a bindable button |
 | Battery glyph in the dial | on | off restores the `BOOST` badge |
-| Battery terminal | Left | Right mirrors the glyph: fill anchored to the left, bolt beside the terminal, percentage at the left end |
+| Battery terminal | Right | the usual battery icon: fill anchored to the left, bolt beside the terminal, percentage at the left end; Left mirrors it (the look before 0.9.38) |
 | Ease the battery ring brightness (120 ms, decorative) | on | brightness only; the state and hue are never eased |
 | Follow camera-focused car | on | falls back to the player car when no car is focused |
 | Lock to player car | off | also a bindable button |
