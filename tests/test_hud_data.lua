@@ -268,7 +268,76 @@ sim.isReplayActive = true; c.drsActive = false; data.readReplay(S, 0)
 equal(S.drsActive, true, 'new FA25 replay restored'); equal(S.soc, nil, 'FA25 never receives hybrid panel')
 data.VRS.f26n1owner[0] = 0; data.readReplay(S, 0)
 equal(S.drsActive, nil, 'old FA25 native false is unknown'); equal(S.valid.drsActive, false, 'old FA25 invalid')
-sim.isReplayActive = false; car(0, 'another_drs_car'); equal(data.recordAll(), 0, 'do not generalize DRS recording')
+
+-- Since 0.9.39 every other car with a native DRS component records the DRS subset under the generic
+-- family (0xA000 + slot + 1): CSP playback reports no DRS history of its own for any sampled car.
+local OTHER = 'another_drs_car'
+sim.isReplayActive = false; c = car(0, OTHER); c.drsAvailable, c.drsActive = true, true
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = true, true, true
+equal(data.recordAll(), 1, 'a conventional DRS car is recorded'); equal(data.recordedDRS, 1, 'and counted as a DRS car')
+equal(data.recordedVanilla, 0, 'never as a standard FA26')
+equal(data.VRS.f26n1owner[0], 0xA001, 'generic family car/slot association')
+equal(data.VRS.f26n1valid[0], 16 + 32 + 64, 'only the DRS subset is valid, whatever the other gates say')
+equal(data.VRS.f26n1state[0], 4 + 8 + 16, 'present, available and open recorded')
+equal(data.VRS.f26n1soc[0], 0, 'a generic car records no battery')
+equal(data.VRS.f26n1strategy[0], 0, 'nor a strategy or deployment share')
+local genericOpen = cloneStream(data.VRS)
+sim.isReplayActive = true; c.drsActive, c.drsAvailable = false, false; data.readReplay(S, 0)
+equal(S.kind, 'drs', 'a generic car keeps the conventional layout in replay')
+equal(S.drsActive, true, 'generic replay restores the open wing'); equal(S.drsAvailable, true, 'and its availability')
+equal(S.drsPresent, true, 'and the component'); equal(S.supported.drsActive, true, 'so the badge is supported')
+equal(S.soc, nil, 'a generic car never receives a battery'); equal(S.boost, nil, 'nor a manual button')
+equal(S.recovering, nil, 'nor a recovery state'); equal(S.strategyName, nil, 'nor a strategy')
+equal(S.source, 'replay: native app stream, car 0', 'the source names the app stream')
+sim.isReplayActive = false; c.drsActive, c.drsAvailable = false, true; data.recordAll()
+equal(data.VRS.f26n1state[0], 4 + 8, 'available and closed recorded')
+sim.isReplayActive = true; c.drsActive = true; data.readReplay(S, 0)
+equal(S.drsActive, false, 'a recorded closed wing outranks the native playback value')
+equal(S.valid.drsActive, true, 'and is a valid false')
+restore(data.VRS, genericOpen); data.VRS.f26n1owner[0] = 0xA002; data.readReplay(S, 0)
+equal(S.drsActive, nil, 'a generic record for another slot is rejected')
+equal(S.source, 'replay: DRS history unavailable', 'and the source says so')
+restore(data.VRS, genericOpen); data.VRS.f26n1owner[0] = 0
+data.readReplay(S, 0); equal(S.drsActive, nil, 'an unrecorded frame stays unknown, not closed')
+restore(data.VRS, genericOpen); ids[0] = VAN; data.readReplay(S, 0)
+equal(S.drsActive, nil, 'a generic record is never read for a standard FA26')
+equal(S.smActive, nil, 'so its SM stays unknown'); equal(S.soc, nil, 'and no battery appears')
+ids[0] = FA25; data.readReplay(S, 0)
+equal(S.drsActive, nil, 'nor for the exact FA25, which has its own family')
+ids[0] = OTHER; restore(data.VRS, genericOpen); data.readReplay(S, 0)
+equal(S.drsActive, true, 'the matching generic car still reads it')
+restore(data.VRS, vanillaOn); data.VRS.f26n1owner[0] = 0xA001; ids[0] = OTHER; data.readReplay(S, 0)
+equal(S.soc, nil, 'standard-FA26 bits under a generic owner never become a battery')
+equal(S.boost, nil, 'nor a manual button'); equal(S.recovering, nil, 'nor a recovery state')
+equal(S.strategyName, nil, 'nor a strategy'); equal(S.deployInput, nil, 'nor a deployment share')
+equal(S.drsActive, true, 'only the DRS subset of such a slot is read')
+-- No component, nothing to keep: no record and no counted gap. A remote car without physics is a gap.
+sim.isReplayActive = false; c = car(0, 'car_without_drs'); c.drsPresent = false
+local gapsBefore = data.recordingGaps.totalNativeEmpty
+equal(data.recordAll(), 0, 'a car without DRS is not recorded')
+equal(data.VRS.f26n1owner[0], 0, 'its slot stays empty')
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore, 'and its empty slot is not a gap')
+c = car(0, OTHER); c.drsActive = true; data.recordAll()
+equal(data.VRS.f26n1owner[0], 0xA001, 'the generic slot is filled again')
+c.drsPresent = false; data.recordAll()
+equal(data.VRS.f26n1owner[0], 0, 'a car that stops reporting DRS clears its slot')
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore, 'without a counted gap')
+c.drsPresent, c.physicsAvailable = true, false
+equal(data.recordAll(), 0, 'a generic car without physics cannot be recorded')
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore + 1, 'and its missing record is a counted gap')
+equal(data.recordingGaps.lastNativeReason, 'physics unavailable', 'with the reason')
+c.drsPresent = false; data.recordAll()
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore + 1, 'a remote car reporting no DRS is not a gap')
+c.drsPresent, c.isConnected = true, false; data.recordAll()
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore + 1, 'nor is a generic car that cannot be read at all')
+c.isConnected = true
+c.physicsAvailable, c.drsPresent = true, true; data.recordAll()
+equal(data.VRS.f26n1owner[0], 0xA001, 'physics back, record back')
+ids[0] = ''; data.recordAll()
+equal(data.VRS.f26n1owner[0], 0, 'a car without an ID is never recorded')
+equal(data.recordingGaps.totalNativeEmpty, gapsBefore + 1, 'nor counted as a gap')
+ids[0] = OTHER
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = false, false, false
 
 -- Pro: exact bus scope, complete old round-trip and partial validity.
 c = car(0, PRO)
@@ -327,12 +396,22 @@ sim.isReplayActive = false; ids[0] = PRO; channel('rearMotorPowerKW', nil); data
 equal(S.kw, nil, 'missing Pro channel is not zero'); equal(S.valid.kw, false, 'missing channel invalid')
 equal(S.boost, true, 'partial Pro fields remain usable'); equal(data.recordAll(), 0, 'old stream cannot encode partial truth')
 equal(data.RS.f26flags[0], 0, 'partial Pro clears old slot')
+equal(data.VRS.f26n1owner[0], 0, 'a partial Pro never falls back to a native slot')
+c.physicsAvailable = false; local gapsPro = data.recordingGaps.totalNativeEmpty
+equal(data.recordAll(), 0, 'nor does a Pro without physics')
+equal(data.VRS.f26n1owner[0], 0, 'its native slot stays empty')
+equal(data.recordingGaps.totalNativeEmpty, gapsPro, 'and a Pro is never a native gap')
+c.physicsAvailable = true
 
 -- State reset, shrinking grids, recording toggle and failures are independent of UI clearing.
-sim.carsCount = 2; c = car(0, VAN); car(1, FA25).drsActive = true
-equal(data.recordAll(), 2, 'mixed native grid')
-sim.carsCount = 1; frames[1] = nil; data.recordAll()
+sim.carsCount = 3; c = car(0, VAN); car(1, FA25).drsActive = true; car(2, 'another_drs_car')
+equal(data.recordAll(), 3, 'mixed native grid')
+equal(data.recordedVanilla, 1, 'one standard FA26'); equal(data.recordedDRS, 2, 'FA25 and the generic car')
+equal(data.VRS.f26n1owner[1], 0xA502, 'FA25 keeps its family in slot 1')
+equal(data.VRS.f26n1owner[2], 0xA003, 'the generic car takes its family in slot 2')
+sim.carsCount = 1; frames[1], frames[2] = nil, nil; data.recordAll()
 equal(data.VRS.f26n1owner[1], 0, 'departed slot cleared')
+equal(data.VRS.f26n1owner[2], 0, 'departed generic slot cleared')
 cfg.recordReplay = false; data.recordAll()
 for _, r in ipairs({ data.RS, data.VRS }) do
   for _, array in pairs(r) do for _, value in pairs(array) do equal(value, 0, 'recording off clears every stored value') end end
@@ -397,16 +476,24 @@ equal(observed.VRS.f26n1strategy[0], 3 + 15 * 16, 'new strategy and full deploym
 observeWrite, observeNativeRead = nil, nil
 
 local sawFamilyRevocation = false
-observeWrite = function(r, key, i)
+local function watchRevocation(r, key, i)
   if r == observed.VRS and i == 0 then
     if key == 'f26n1valid' and r.f26n1valid[0] == 0 then sawFamilyRevocation = true end
     if key == 'f26n1soc' then check(sawFamilyRevocation, 'old family validity revoked before new payload') end
   end
 end
+observeWrite = watchRevocation
 car(0, FA25); observed.recordAll(); observeWrite = nil
 check(sawFamilyRevocation, 'family switch performs explicit revocation')
 equal(observed.VRS.f26n1owner[0], 0xA501, 'family switch publishes FA25 owner last')
-c = car(0, VAN); observed.recordAll()
+sawFamilyRevocation, observeWrite = false, watchRevocation
+car(0, 'another_drs_car'); observed.recordAll(); observeWrite = nil
+check(sawFamilyRevocation, 'a switch to the generic family revokes the old validity first')
+equal(observed.VRS.f26n1owner[0], 0xA001, 'and publishes the generic owner last')
+sawFamilyRevocation, observeWrite = false, watchRevocation
+c = car(0, VAN); observed.recordAll(); observeWrite = nil
+check(sawFamilyRevocation, 'and back from the generic family too')
+equal(observed.VRS.f26n1owner[0], 0xA601, 'standard FA26 owner restored')
 
 -- A truly missing field must lose validity and payload immediately, without stale data.
 c.kersCharge = nil; observed.recordAll()

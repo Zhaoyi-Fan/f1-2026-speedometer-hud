@@ -256,7 +256,18 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
               check(colorEquals(matchingFill(drs), green), 'valid active native DRS illuminates')
               check(not textContains('MJ') and not textContains('kW') and not textContains('PU '), 'legacy layout has no Pro energy fields')
             else
-              check(findText('SM') and findText('OT') and not findText('DRS'), '2026 badge cluster retained')
+              local sm = findText('SM')
+              check(sm and not findText('DRS') and near(sm.y, 240 * scale) and near(sm.h, 24 * scale), '2026 SM badge keeps its row')
+              check(colorEquals(matchingFill(sm), green), 'a valid open SM is green')
+              if kind == 'pro' then
+                local ot = findText('OT')
+                check(ot and near(sm.x, 122 * scale) and near(sm.w, 45 * scale)
+                  and near(ot.x, 173 * scale) and near(ot.w, 45 * scale) and near(ot.y, 240 * scale), 'the Pro keeps the SM | OT pair')
+              else
+                -- The standard FA26 has no Overtake Mode: no OT badge, and SM spans the 96-unit slot.
+                check(not findText('OT'), 'the standard FA26 draws no OT badge')
+                check(near(sm.x, 122 * scale) and near(sm.w, 96 * scale), 'its SM badge takes the whole row')
+              end
               if showBattery then
                 check(not boostBadge(scale) and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge: ' .. side)
                 -- both fixtures hold the Boost command, so the body reads BOOST instead of the charge
@@ -274,7 +285,6 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
                 if panel then check(findText('MGU-K') and textContains('MJ') and findText('PU RACE'), 'Pro panel keeps energy and PU fields') end
               else
                 check(not textContains('MJ') and not textContains('kW') and not textContains('PU ') and not findText('MGU-K'), 'ordinary layout excludes Pro-only quantities')
-                check(colorEquals(matchingFill(findText('OT')), dark), 'ordinary OT remains dark')
                 if panel then
                   check(findText('NODEPLOY') and findText('50%'), 'ordinary strategy and battery percentage shown')
                   local label = findText(lang == 'zh' and '电池' or 'Battery')
@@ -759,7 +769,33 @@ check(colorEquals(matchingFill(findText('SM')), dark), 'stationary Pro does not 
 snapshots[1] = { kind = 'vanilla', speed = 150, smAvailable = true, latch = 2,
   wingF = true, wingR = true, valid = { smAvailable = true, latch = true, wingF = true, wingR = true } }
 render()
-check(colorEquals(matchingFill(findText('SM')), rgbm(1, 1, 1, 1)), 'ordinary SM uses native availability and ignores Pro latch/wing fields')
+check(colorEquals(matchingFill(findText('SM')), yellow), 'standard SM availability is the in-zone yellow and ignores Pro latch/wing fields')
+-- The standard car's SM has three states. Its native availability exists only inside the zone, so it is
+-- always the Pro's yellow "available, already in the zone", never the white pre-latch prompt.
+local black, dimText = rgbm(0, 0, 0, 1), rgbm(1, 1, 1, 0.35)
+local standardSm = {
+  { active = false, available = false, fill = dark, ink = dimText },
+  { active = false, available = true, fill = yellow, ink = black },
+  { active = true, available = true, fill = green, ink = rgbm(1, 1, 1, 1) },
+  { active = true, available = false, fill = green, ink = rgbm(1, 1, 1, 1) },
+}
+for _, case in ipairs(standardSm) do
+  for _, speed in ipairs({ 150, 0 }) do
+    snapshots[1] = { kind = 'vanilla', speed = speed, smActive = case.active, smAvailable = case.available,
+      valid = { smActive = true, smAvailable = true } }
+    render()
+    local sm, label = findText('SM'), 'active ' .. tostring(case.active) .. ', available ' .. tostring(case.available) .. ', ' .. speed .. ' km/h'
+    check(sm and near(sm.x, 122) and near(sm.w, 96), 'standard SM spans the row: ' .. label)
+    check(colorEquals(matchingFill(sm), case.fill) and colorEquals(sm.color, case.ink), 'standard SM colours: ' .. label)
+    check(not findText('OT'), 'no OT badge in any standard SM state: ' .. label)
+  end
+end
+snapshots[1] = { kind = 'vanilla', speed = 150, smActive = true, smAvailable = true, valid = { smAvailable = true } }
+render()
+check(colorEquals(matchingFill(findText('SM')), yellow), 'an unverified open flag cannot turn available into open')
+snapshots[1].valid = {}
+render()
+check(colorEquals(matchingFill(findText('SM')), dark), 'unverified standard SM stays dark')
 
 snapshots[2] = fixture('drs')
 snapshots[2].drsPresent, snapshots[2].drsActive = false, false

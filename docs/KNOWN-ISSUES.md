@@ -1,8 +1,19 @@
-# Known issues — version 0.9.38
+# Known issues — version 0.9.39
 
-Updated 2026-09-16 for version 0.9.38 (the right-facing battery glyph and its terminal setting, on
-0.9.37's Straight Mode latch fix, 0.9.36's word BOOST, 0.9.35's standard-FA26 deployment request and
-0.9.3's in-dial battery glyph; replay-stream layouts as in 0.9.2).
+Updated 2026-09-16 for version 0.9.39 (the standard FA26's badge row and DRS recording for every car
+with native DRS, on 0.9.38's right-facing battery glyph and its terminal setting, 0.9.37's Straight Mode
+latch fix, 0.9.36's word BOOST, 0.9.35's standard-FA26 deployment request and 0.9.3's in-dial battery
+glyph; replay-stream layouts as in 0.9.2).
+
+## Replays recorded without the app show conventional DRS dark
+
+AC's replay data keeps each car's open wing, and the wing moves on screen, but CSP does not give that
+state back to apps during playback, so the `DRS` indicator (and the standard FA26's `SM`) can only
+come from this app's own recording. From 0.9.39 every car with a native DRS component is recorded
+(before, only the standard FA26 and the FA25 CSP). Replays recorded without the app or with recording
+switched off, and replays of other cars made before 0.9.39, stay dark rather than showing a closed wing.
+Version 0.9.38 and earlier leave the new DRS records of cars other than the standard FA26 and the FA25
+CSP unread.
 
 ## Pro replays recorded between 0.9.2 and 0.9.36 lose their Straight Mode stretches
 

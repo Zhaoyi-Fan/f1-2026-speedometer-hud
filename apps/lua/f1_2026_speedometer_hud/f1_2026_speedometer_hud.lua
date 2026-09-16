@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.38'
+local VERSION = '0.9.39'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -534,7 +534,9 @@ end
 local function smState(S)
   if S.kind == 'vanilla' then
     if valid(S, 'smActive') and S.smActive then return 'on' end
-    if valid(S, 'smAvailable') and S.smAvailable then return 'avail' end
+    -- The standard car's SM is native DRS: it becomes available only inside the zone and has no
+    -- pre-latch window, so it takes the Pro's yellow "available, already in the zone" colour, never white.
+    if valid(S, 'smAvailable') and S.smAvailable then return 'late' end
     return 'off'
   end
   if S.kind ~= 'pro' then return 'off' end
@@ -692,7 +694,7 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   text(fontB, fmtInt(S.rpm), 27 * s, ox + 95 * s, oy + 175 * s, 150 * s, 34 * s, C.white)
   text(fontM, 'RPM', 16 * s, ox + 120 * s, oy + 212 * s, 100 * s, 20 * s, C.grey)
 
-  -- badge cluster where the DRS badge used to be: SM | OT on top, the Boost button spanning both below.
+  -- badge cluster where the DRS badge used to be: SM | OT on top (the Pro), the Boost button spanning both below.
   -- Width budget (v0.9): the throttle / brake track start caps (r 13.5 at (103.2, 269.1) and (236.8, 269.1))
   -- narrow the free channel to x 116.7-223.3 at y 269, so the cluster is 96 wide (x 122-218) to clear
   -- both caps by >= 5 units on every row; v0.8's 120-wide cluster overlapped them (seen in-game).
@@ -702,11 +704,16 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
       on and C.green or C.track, nil, 'DRS', 16 * s, on and C.white or C.dim, 6 * s)
   else
     local st = SM_STYLE[smState(S)]
-    pill(fontB, ox + 122 * s, oy + 240 * s, 45 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
-    local otFill, otBorder, otTxt = C.track, nil, C.dim
-    if valid(S, 'otActive') and S.otActive then otFill, otTxt = C.green, C.white
-    elseif valid(S, 'otPending') and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
-    pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
+    if S.kind == 'pro' then
+      pill(fontB, ox + 122 * s, oy + 240 * s, 45 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
+      local otFill, otBorder, otTxt = C.track, nil, C.dim
+      if valid(S, 'otActive') and S.otActive then otFill, otTxt = C.green, C.white
+      elseif valid(S, 'otPending') and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
+      pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
+    else
+      -- The standard FA26 has no Overtake Mode at all, so there is no OT badge and SM takes the whole row.
+      pill(fontB, ox + 122 * s, oy + 240 * s, 96 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
+    end
     if cfg.showBattery then
       drawBattery(S, ox, oy, s, fontB)   -- the glyph's body carries the Boost button, its ring the energy flow
     else

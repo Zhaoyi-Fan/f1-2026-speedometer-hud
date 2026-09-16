@@ -1,7 +1,9 @@
 # Data contract
 
-This document describes version 0.9.37 (the Straight Mode latch's engaged state in the Pro stream,
-on top of 0.9.36's word BOOST inside the glyph while the command is held,
+This document describes version 0.9.39 (the standard FA26's badge row and the generic DRS recording
+family, on top of 0.9.38's right-facing battery glyph,
+0.9.37's Straight Mode latch engaged state in the Pro stream,
+0.9.36's word BOOST inside the glyph while the command is held,
 on top of 0.9.35's standard-FA26 deployment request and the in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
 are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract. What each version changed is
 listed in [CHANGELOG.md](../CHANGELOG.md).
@@ -18,7 +20,7 @@ in [COMPATIBILITY.md](COMPATIBILITY.md).
 | Replay, exact Pro | AC's own replay | Original Pro stream; H / I only when that stream is absent |
 | Replay, exact native FA26 | AC's own replay | Native-state stream, independently valid fields; no unverified native false/zero fallback |
 | Replay, exact FA25 CSP | AC's own replay | Native-state DRS recording if present; tested native history is unreliable |
-| Replay, other conventional car | AC's own replay | Native DRS requires separate model/field verification; currently unknown/dark |
+| Replay, other conventional car | AC's own replay | Native-state DRS recording (generic family, since 0.9.39) if present; otherwise unknown/dark, because CSP playback returns no DRS history |
 
 The car index is the camera-focused car (`sim.focusedCar`, then `sim.closelyFocusedCar`, then 0),
 or 0 when "lock to player car" is on.
@@ -158,8 +160,12 @@ native H / I is used only when the Pro stream is absent, never on FA25 or native
 | Availability | `drsAvailable` | Separate from actual activation and does not imply a track-rule implementation by the HUD |
 | Activation | `drsActive` | Native FA26 SM or conventional DRS; rear-wing movement and live transitions verified for native FA26 |
 
-Native FA26 SM has only off / available / on states. It does not reuse the Pro blue/yellow latch
-states or H / I. OT is unsupported and dark. Its recovery, SM, battery, BOOST and deployment
+Native FA26 SM has only off / available / on states and never reads the Pro latch or H / I. Its
+availability starts only inside a zone, so since 0.9.39 it is drawn in the Pro's yellow "available,
+already in the zone" colour, never the white pre-latch prompt; off is dark and on is green. The car
+has no Overtake Mode, so its dial has no OT badge and the SM badge spans the row (x 122–218, y 240,
+96 × 24 design units); before 0.9.39 an always-dark OT badge stood beside a 45-unit SM badge. Its
+recovery, SM, battery, BOOST and deployment
 paths were validated from private in-game sampling in September 2026; the source does not include
 those samples or any commercial car files. The car's observed tail-wing opening is not a claim
 of independently verified front-wing actuation.
@@ -167,8 +173,13 @@ of independently verified front-wing actuation.
 Sampled FA25 native replay `drsActive` stayed false and `drsAvailable` stayed true while live
 samples changed. Old native FA26 saved replays similarly lost battery, BOOST and deployment
 history; in-session preview could freeze the last live values. The replay reader therefore
-does not trust these defaults, even if `physicsAvailable` is true. Other conventional cars
-are not automatically given extra recording or declared verified by those FA25 results.
+does not trust these defaults, even if `physicsAvailable` is true (it read true in replays).
+AC's replay data does store each car's open wing, but CSP does not expose it in playback: on the
+standard FA26, all 278 sampled playback frames whose replay data shows the wing open reported
+`drsActive` false. Since 0.9.39 every car that reports a native DRS component is therefore recorded
+(generic family below); its playback reads only that record. The record copies the reported state;
+it does not verify what the component does on a given car. Of the native fields, only `kersCharging`
+was observed to follow the replay in CSP playback; the reader still takes recovery from the record.
 
 ## Original Pro replay stream (unchanged)
 
@@ -203,7 +214,7 @@ is the exact layout below. The Pro layout is never enlarged or reused for native
 
 | Field | Array element | Encoding |
 | --- | --- | --- |
-| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; 0 = absent |
+| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; any other car reporting a native DRS component (0.9.39) `0xA000 + index + 1`; 0 = absent |
 | `f26n1valid` | uint8 | bit 0 SoC, 1 BOOST, 2 strategy, 3 recovery, 4 DRS present, 5 available, 6 active |
 | `f26n1state` | uint8 | bit 0 BOOST, 1 recovery, 2 DRS present, 3 available, 4 active |
 | `f26n1soc` | uint8 | SoC × 250, nearest integer, range 0–250; max error 0.2 percentage points |
@@ -221,7 +232,15 @@ The owner embeds the schema/car family and slot; playback
 requires an exact expected owner for the selected car ID and index. A valid false or zero is
 authoritative; native defaults never overwrite it. Strategy is recorded only when the native
 API name matches the four-name contract. A different name can display live but is not silently
-recorded as a different strategy. FA25 slots only use the DRS subset.
+recorded as a different strategy. FA25 and generic slots only use the DRS subset.
+
+The generic family (0.9.39) covers every car except the standard FA26 and the exact FA25 CSP, but a
+slot is written only while the car reports a DRS component through trusted physics. A car without
+one leaves its slot empty and is not counted as a recording gap; a car whose physics is unavailable
+while it shows a component is counted. The Pro's adapter never reads native DRS, so a Pro never takes
+a native slot. Readers older than 0.9.39 know no generic family and leave such slots unread. The
+layout, the other two families and every validity bit are unchanged, so recordings restore field for
+field in both directions.
 
 Integers are intentional: the official SDK struct builder gives these raw integer items no
 `replayType`, and its replay interpolation map only includes items having that metadata. Packed

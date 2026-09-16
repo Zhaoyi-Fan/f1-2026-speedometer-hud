@@ -5,8 +5,11 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.38** turns the battery glyph to face right by default, like a common battery icon, and
-adds a setting that puts its terminal back on the left. **0.9.37** fixes a recording defect: Pro replays
+Version **0.9.39** removes the always-dark `OT` badge from the standard FA26, which has no Overtake
+Mode at all: its `SM` badge now spans the row and turns yellow while available. It also records the DRS
+state of every car with a native DRS component into replays, because CSP's replay playback does not
+return it. **0.9.38** turned the battery glyph to face right by default, like a common battery icon, and
+added a setting that puts its terminal back on the left. **0.9.37** fixes a recording defect: Pro replays
 recorded since 0.9.2 had no energy data at all in the frames where Straight Mode was engaged.
 **0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
 standard FA26 its own deployment indication on the battery glyph that
@@ -32,8 +35,8 @@ remote cars can expose fewer fields; missing data is never replaced by the playe
 | Car | Display | Energy and replay |
 | --- | --- | --- |
 | FA26 Pro, exact ID `vrc_formula_alpha_2026_csp` | SM / OT / BOOST | Full Pro panel and original Pro replay stream |
-| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark, the car has no overtake channel | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode, deployment request and recovery state |
-| FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; exact FA25 CSP gets a small DRS recording when native replay history is unavailable |
+| Native FA26, exact ID `vrc_formula_alpha_2026` | `SM` across the badge row, and BOOST; no `OT` badge, because the car has no Overtake Mode | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode, deployment request and recovery state |
+| FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; every car with a native DRS component gets a small DRS recording (before 0.9.39, only the exact FA25 CSP) |
 | Cars without DRS | The same DRS indicator, always dark | No energy panel |
 
 The **car selects the layout**. Track zones and rules affect availability, and actual reported
@@ -54,7 +57,8 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 | `OT` Overtake | not available | white outline = granted, waiting for the activation line · green = active this lap |
 | Battery glyph | `--` with an idle ring | body magenta and reading `BOOST` while the Boost button is held / toggled · ring and terminal red while harvesting, green while deploying, magenta while Boost deploys, brighter with more power · bolt in the same hue, white on the magenta body · fill and digits amber when the figure is 10 % or less |
 
-**Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below `SM` / `OT`.
+**Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below the badge
+row (`SM` / `OT` on the Pro, `SM` alone on the standard FA26).
 The terminal is on the right by default, the way most battery icons face: the fill is anchored to the
 left and drains towards it, the bolt sits beside the terminal and the percentage at the other end.
 Setting the terminal to the left draws the mirror image, the only layout before 0.9.38: the fill is
@@ -91,14 +95,16 @@ still turn it red, and the green and red
 brightnesses are separate declared scales that cannot be compared with each other or with the Pro's
 power scale. BOOST represents the native manual override command, not automatic deployment or
 guaranteed output power.
-Native SM uses only off / available / active; it has no Pro pre-latch or late state. OT stays
-dark, because this car has no overtake channel. Recovery is distinct from Pro Charge / Anti mode.
+Native SM is the car's own DRS component, and its badge spans the whole row: dark when off, yellow
+while available, green while the wings are open. The car reports "available" only inside a zone,
+which is what yellow means on the Pro; there is no pre-latch and no white prompt. The standard FA26
+has no Overtake Mode at all, so its dial has no `OT` badge. Recovery is distinct from Pro Charge / Anti mode.
 No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigned to this car.
 
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.38 dial state illustrations, battery terminal on the right (the default)](docs/dial-states.png)
+![v0.9.39 dial state illustrations: three FA26 Pro states and the standard FA26 with its full-width SM badge, battery terminal on the right (the default)](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -130,8 +136,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.38.zip` from the
-[v0.9.38 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.38)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.39.zip` from the
+[v0.9.39 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.39)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -139,8 +145,9 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.38**. From this version the battery
-glyph faces right; set Display › Battery terminal to Left for the earlier look. The dial no longer has side
+replay and check that the settings window shows version **0.9.39**. Since 0.9.39 the standard FA26
+shows `SM` across the badge row and no `OT` badge. Since 0.9.38 the battery glyph faces right; set
+Display › Battery terminal to Left for the earlier look. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.
@@ -174,9 +181,14 @@ has no background; hover it to get the title bar and drag it where you want it.
 
 The original Pro stream is unchanged: 22 slots, 11 bytes per slot, every second replay frame.
 A separate native-state stream uses 22 slots at 6 bytes per slot each replay frame, including
-vehicle/slot identity and independent validity bits. It records native FA26 fields and only
-the necessary DRS state for the exact FA25 CSP model. Other conventional cars are not all
-assigned extra recording. Actual file growth depends on replay timing and compression.
+vehicle/slot identity and independent validity bits. It records native FA26 fields, and the DRS
+state (component, availability, open wing) of the exact FA25 CSP and, since 0.9.39, of every other
+car that reports a native DRS component. A car without DRS takes no slot, and the Pro uses only its
+own stream. Actual file growth depends on replay timing and compression.
+
+Version 0.9.39 gave those other cars their own car-family code in the same layout. Earlier versions
+do not know that code and leave such slots unread, so a 0.9.39 recording opened in 0.9.38 shows those
+cars' DRS as unavailable; the standard FA26 and FA25 slots read exactly as before, in both directions.
 
 Version 0.9.35 added the standard FA26's deployment request to that stream without changing its
 size or layout: it travels in four free bits of the byte that already carried the strategy index.
@@ -191,8 +203,11 @@ Old Pro replays retain the original stream reader and the Pro-only native H / I 
 Replays recorded by versions 0.9.2 to 0.9.36 hold no energy data in the frames where Straight Mode was
 engaged; 0.9.37 records those frames again, but existing files cannot be repaired.
 Old native FA26 samples did not restore battery, manual BOOST or deployment changes; absent
-valid app recording, these remain unknown. The tested FA25 old replays also did not restore
-native `drsActive`, so their DRS indicator stays dark without claiming a known closed wing.
+valid app recording, these remain unknown. AC's replay data does keep each car's open wing, but CSP
+does not give it back to apps during playback: on the FA25 CSP and the standard FA26, `drsActive`
+stayed false and `drsAvailable` true throughout, and on the standard FA26 that included every checked
+frame in which the replay itself has the wing open. A replay recorded without this app therefore
+shows DRS dark, without claiming a known closed wing.
 Reliable native replay support must be verified per car and field, not inferred from a returned
 false or zero. Installing the app does not add missing history to an existing replay.
 

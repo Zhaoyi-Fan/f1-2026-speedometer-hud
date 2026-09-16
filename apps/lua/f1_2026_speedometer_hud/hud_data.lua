@@ -17,7 +17,9 @@ local PRO_FLAG_MASKS = { otActive = 1, otPending = 2, boost = 4, charge = 8, pl 
 local LATCH_HIGH = 8192   -- bit 13, free since v0.9.1: the Straight Mode latch's third bit
 
 -- Evidence gates, not user settings. Enable only after an observed action/state comparison.
--- Native FA25 replay flags are constant in the available samples and are NOT verified history.
+-- Native replay DRS flags are NOT history: AC's replay file keeps the open wing, but in CSP playback
+-- drsActive stayed false and drsAvailable true on every sampled frame (FA25 CSP, standard FA26), so a
+-- replay shows DRS only from this app's own recording.
 -- Vanilla SM: native live transitions plus the rear wing observed opening after DRS in game,
 -- 2026-09-13. This establishes drag reduction, not independent Pro front/rear actuators.
 -- Recovery: observed battery rise under braking and positive SoC changes in sustained native
@@ -110,10 +112,24 @@ local NATIVE_BITS = { soc = 1, boost = 2, strategy = 4, recovering = 8,
 local DEPLOY_STEPS = 14
 local NATIVE_STATE_BITS = { boost = 1, recovering = 2, drsPresent = 4,
   drsAvailable = 8, drsActive = 16 }
--- v1 schema and exact-car family; low byte is car slot + 1. Other cars are never recorded.
+-- v1 schema: the high byte names the car family, the low byte is car slot + 1. The standard FA26 and
+-- the exact FA25 CSP keep their own families. Since 0.9.39 every other car records its DRS subset under
+-- the generic family, and only while it reports a DRS component (the Pro's adapter never reads native
+-- DRS, so a Pro never qualifies); readers older than 0.9.39 know no generic family and leave those
+-- slots unread.
+local GENERIC_BASE = 0xA000
 local function ownerBase(id)
   if id == VANILLA_ID then return 0xA600 end
   if id == FA25_ID then return 0xA500 end
+  if type(id) == 'string' and id ~= '' then return GENERIC_BASE end
+end
+-- Slots that should hold a native record: the two named families always, a generic car only while its
+-- snapshot shows a DRS component. The raw candidate is used, so a car whose physics is unavailable still
+-- counts; a car that could not be read at all has an empty snapshot and never qualifies.
+local function expectsNative(S, id)
+  local base = ownerBase(id)
+  if base ~= GENERIC_BASE then return base ~= nil end
+  return S.candidate ~= nil and S.candidate.drsPresent == true
 end
 
 function M.new(ac, sim, cfg)
@@ -343,6 +359,9 @@ function M.new(ac, sim, cfg)
     return true
   end
   local function recordNative(S, i)
+    local base = ownerBase(S.carID)
+    -- A generic car holds nothing worth keeping without a DRS component.
+    if base == GENERIC_BASE and S.drsPresent ~= true then return false end
     local r, valid, state = data.VRS, 0, 0
     for field, mask in pairs(NATIVE_BITS) do
       local trusted = S.valid[field] == true
@@ -358,7 +377,7 @@ function M.new(ac, sim, cfg)
       end
     end
     if valid == 0 then return false end
-    local owner = ownerBase(S.carID) + i + 1
+    local owner = base + i + 1
     -- Construct this sample before touching the shared replay buffer. A valid-to-valid
     -- refresh must not publish a temporary empty slot while native APIs are being read.
     local soc = has(valid, NATIVE_BITS.soc) and quantize(S.soc * 250, 0, 250) or 0
@@ -406,7 +425,7 @@ function M.new(ac, sim, cfg)
       if not wroteNative then clearSlot(data.VRS, NATIVE_FIELDS, i) end
       if i < count and not wroteNative then
         local id = recordSnap.carID or call(ac.getCarID, i)
-        if ownerBase(id) then
+        if expectsNative(recordSnap, id) then
           local gaps = data.recordingGaps
           gaps.totalNativeEmpty, gaps.lastNativeIndex = gaps.totalNativeEmpty + 1, i
           if not data.VRS then gaps.lastNativeReason = 'native stream unavailable'

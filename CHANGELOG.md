@@ -6,6 +6,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 | Version | In one line |
 | --- | --- |
+| 0.9.39 | **Changed:** the standard FA26 loses its always-dark `OT` badge, and its `SM` spans the row and turns yellow when available; **New:** DRS replay recording for every car with native DRS |
 | 0.9.38 | **Changed:** the battery glyph faces right, like a common battery icon; a new setting turns it back to the left |
 | 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
 | 0.9.36 | **New:** the glyph reads `BOOST` while the command is held; a single-digit charge stays visible beside it |
@@ -23,6 +24,29 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 | 0.3 | **New:** negative MGU-K caps drawn as super-clipping |
 | 0.2 | **Changed:** 1-based PU names, opaque arc tracks, a persistent diagnostics file |
 | 0.1 | First build |
+
+## 0.9.39 — 2026-09-16
+
+Shows the standard FA26 only the systems it has, and records DRS for every car that has one. The Pro's
+display, the Pro stream and both stream layouts are those of 0.9.38.
+
+- The standard FA26 has no Overtake Mode. It is VRC's version for Assetto Corsa without CSP, so none of
+  the Pro's scripted systems exist on it, and the game itself ignores the track's overtake zone. The
+  `OT` badge, which could never light on this car, is gone, and `SM` now spans the badge row.
+- That car's Straight Mode is the game's own DRS. It reports "available" only once the car is inside a
+  zone and has no pre-latch, so the badge now shows that state in yellow, the Pro's "available,
+  already in the zone" colour, instead of white, the Pro's "press to pre-latch" prompt. Off stays dark
+  and open stays green.
+- Every car that reports a native DRS component now records its DRS state (component, availability,
+  open wing) into replays, under a new car-family code in the existing native-state stream. Until now
+  only the exact FA25 CSP was recorded, so other cars showed DRS dark in every replay. AC's replay data
+  does keep the open wing, but CSP does not give it back to apps during playback, so the app records it
+  itself. Cars without DRS take no slot, and the Pro keeps its own stream.
+- Compatibility: the stream layout is unchanged. Versions up to 0.9.38 do not know the new family code
+  and leave those slots unread, so a 0.9.39 recording shows those cars' DRS as unavailable there. The
+  standard FA26 and FA25 slots restore exactly as before in both directions. Replays recorded before
+  0.9.39 hold no DRS history for other cars.
+- The README illustration now shows the standard FA26's badge row.
 
 ## 0.9.38 — 2026-09-16
 
