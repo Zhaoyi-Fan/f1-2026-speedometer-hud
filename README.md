@@ -5,10 +5,11 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.39** removes the always-dark `OT` badge from the standard FA26, which has no Overtake
-Mode at all: its `SM` badge now spans the row and turns yellow while available. It also records the DRS
-state of every car with a native DRS component into replays, because CSP's replay playback does not
-return it. **0.9.38** turned the battery glyph to face right by default, like a common battery icon, and
+Version **0.9.39** moves the battery glyph's percentage next to its terminal, with the bolt at the
+other end. It removes the always-dark `OT` badge from the standard FA26, which has no Overtake Mode at
+all: its `SM` badge now spans the row and turns yellow while available. It also records the DRS state
+of every car with a native DRS component into replays, because CSP's replay playback does not return
+it. **0.9.38** turned the battery glyph to face right by default, like a common battery icon, and
 added a setting that puts its terminal back on the left. **0.9.37** fixes a recording defect: Pro replays
 recorded since 0.9.2 had no energy data at all in the frames where Straight Mode was engaged.
 **0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
@@ -60,10 +61,12 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 **Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below the badge
 row (`SM` / `OT` on the Pro, `SM` alone on the standard FA26).
 The terminal is on the right by default, the way most battery icons face: the fill is anchored to the
-left and drains towards it, the bolt sits beside the terminal and the percentage at the other end.
-Setting the terminal to the left draws the mirror image, the only layout before 0.9.38: the fill is
-anchored to the right, so deploying moves its edge to the right and harvesting to the left, the same
-directions as the panel's MGU-K bar. The text is never reversed, and nothing but the placement changes. The ring
+left and drains towards it. The percentage sits beside the terminal and the bolt at the other end,
+where it stands on the fill most of the time, so it is outlined like the digits (up to 0.9.38 the two
+had each other's places). Setting the terminal to the left draws the mirror image, the side used by
+0.9.3 to 0.9.37: the fill is anchored to the right, so deploying moves its edge to the right and
+harvesting to the left, the same directions as the panel's MGU-K bar. The text is never reversed, and
+nothing but the placement changes. The ring
 around it shows the MGU-K flow of the current update, with brightness, width and a small halo
 following the power on the Pro and the deployment request on the standard FA26. Nothing animates on
 its own apart from the optional 120 ms brightness easing
@@ -104,7 +107,7 @@ No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigne
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.39 dial state illustrations: three FA26 Pro states and the standard FA26 with its full-width SM badge, battery terminal on the right (the default)](docs/dial-states.png)
+![v0.9.39 dial state illustrations: three FA26 Pro states and the standard FA26 with its full-width SM badge, battery terminal on the right (the default) with the percentage beside it](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -146,8 +149,9 @@ also works.
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
 replay and check that the settings window shows version **0.9.39**. Since 0.9.39 the standard FA26
-shows `SM` across the badge row and no `OT` badge. Since 0.9.38 the battery glyph faces right; set
-Display › Battery terminal to Left for the earlier look. The dial no longer has side
+shows `SM` across the badge row and no `OT` badge, and the glyph's percentage sits beside its terminal.
+Since 0.9.38 the battery glyph faces right; set Display › Battery terminal to Left to put the terminal
+back on the left. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.
@@ -222,7 +226,7 @@ extra files; the diagnostics log and the CSP settings storage are separate from 
 | Scale | 1.00 | 0.5 to 2.5 |
 | Show energy panel | on | also a bindable button |
 | Battery glyph in the dial | on | off restores the `BOOST` badge |
-| Battery terminal | Right | the usual battery icon: fill anchored to the left, bolt beside the terminal, percentage at the left end; Left mirrors it (the look before 0.9.38) |
+| Battery terminal | Right | the usual battery icon: fill anchored to the left, percentage beside the terminal, bolt at the left end; Left mirrors it (the side used before 0.9.38) |
 | Ease the battery ring brightness (120 ms, decorative) | on | brightness only; the state and hue are never eased |
 | Follow camera-focused car | on | falls back to the player car when no car is focused |
 | Lock to player car | off | also a bindable button |

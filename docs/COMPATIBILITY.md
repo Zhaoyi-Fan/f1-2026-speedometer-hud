@@ -5,9 +5,10 @@ battery glyph inside the dial; version 0.9.35 reads one further native field on 
 its deployment request, and gives that car's panel a second chip; version 0.9.36 writes the word BOOST
 inside the glyph while that command is held; version 0.9.37 stops the Pro stream dropping every frame
 in which Straight Mode is engaged; version 0.9.38 turns the glyph to face right by default and adds
-a display setting for the terminal side; version 0.9.39 removes the standard FA26's `OT` badge,
-widens its `SM` badge to the whole row and draws its available state yellow, and records the DRS state
-of every car with a native DRS component under a generic car family. The Pro adapter, the validity
+a display setting for the terminal side; version 0.9.39 puts the glyph's percentage beside the terminal
+and its bolt, now outlined, at the other end, removes the standard FA26's `OT` badge, widens its `SM`
+badge to the whole row and draws its available state yellow, and records the DRS state of every car
+with a native DRS component under a generic car family. The Pro adapter, the validity
 rules and both replay-stream layouts are those of 0.9.2, so the checks below still apply to them; the
 standard-FA26 rows carry their own new pending item, because the samples behind them predate that field. The 0.9.1 ZIP is
 the earlier Pro-only build.
@@ -29,7 +30,7 @@ the earlier Pro-only build.
 | Other conventional cars, replays | DRS from the app's generic record; without one, unknown and dark | Native playback is not history on any sampled car: on the standard FA26, 278 samples whose replay data shows the wing open all reported it closed. A 0.9.38 reader leaves generic slots unread and reads the standard FA26 and FA25 slots exactly as 0.9.39 does, in both directions (one-off check against the 0.9.38 source, 102 assertions) | Playback of a 0.9.39 recording on such a car |
 | Cars without DRS | Same DRS label, always dark | Known-absent and conflicting-input tests | A game screenshot |
 | Mixed camera, pause, reverse seek, missing data | The current snapshot is rebuilt every update; no previous-car or future-value cache | Synthetic routing and state tests | Mixed-grid acceptance |
-| Battery glyph, Pro and standard FA26 | Body = Boost button, reading `BOOST` while it is held (the single-digit charge returns beside the word); ring and terminal = the flow of the current update (red harvest, green deploy, magenta Boost); bolt = the same hue, white on the magenta Boost body; fill anchored to the wall opposite the terminal (on the right by default; the left-hand setting draws the mirror image, the look before 0.9.38), amber when the displayed figure is 10 % or less; `--` without fill or bolt when the charge is invalid. Brightness comes from `|kW| / 350` on the Pro, and on the standard FA26 from the deployment request, or a fixed value while it reports recovery | Offline UI checks of every state, the 5 kW deadband and the request deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, the native deploy / Boost / recovery precedence, the `BOOST` word with and without the single-digit number, the two terminal sides as mirror images (twelve states at three scales compared shape by shape; the bolt moved, not flipped), the left side drawing exactly what 0.9.37 drew (1,536 rendered states compared draw call by draw call), and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates). A lap with the automatic gearbox showed no flicker of the Pro's ring at the upshift throttle cut. Both terminal sides were viewed in game on a Pro replay before the right-facing glyph became the default | A Pro session with harvesting, deploying, Boost and super-clipping; readability of the digits, bolt and ring at any scale; the right-facing glyph on the standard FA26 and in a live session |
+| Battery glyph, Pro and standard FA26 | Body = Boost button, reading `BOOST` while it is held (the single-digit charge returns beside the word); ring and terminal = the flow of the current update (red harvest, green deploy, magenta Boost); bolt = the same hue, white on the magenta Boost body, outlined and standing at the anchored end, with the percentage beside the terminal (since 0.9.39); fill anchored to the wall opposite the terminal (on the right by default; the left-hand setting draws the mirror image, the side used before 0.9.38), amber when the displayed figure is 10 % or less; `--` without fill or bolt when the charge is invalid. Brightness comes from `|kW| / 350` on the Pro, and on the standard FA26 from the deployment request, or a fixed value while it reports recovery | Offline UI checks of every state, the 5 kW deadband and the request deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, the native deploy / Boost / recovery precedence, the `BOOST` word with and without the single-digit number, the two terminal sides as mirror images (twelve states at three scales compared shape by shape; the bolt moved, not flipped), the percentage beside the terminal and the bolt at the anchored end on each side, the bolt's outline, core and drawing order over the fill, and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates). In 0.9.38 the left side drew exactly what 0.9.37 drew (1,536 rendered states compared draw call by draw call); the 0.9.39 placement change was compared the same way (3,072 states, both sides) and altered nothing but the bolt and the glyph's own text. A lap with the automatic gearbox showed no flicker of the Pro's ring at the upshift throttle cut. Both terminal sides were viewed in game on a Pro replay before the right-facing glyph became the default | A Pro session with harvesting, deploying, Boost and super-clipping; readability of the digits, bolt and ring at any scale, including the 0.9.39 outlined bolt over the fill; the right-facing glyph on the standard FA26 and in a live session |
 | Chinese / English, scale, panel and glyph | Pro dial and panel, compact standard-FA26 panel, plain dial for other cars; the `BOOST` badge returns when the glyph is off; the glyph on either terminal side | 144 UI combinations (both terminal sides) and drawing bounds | Actual font rendering at each scale |
 
 ## What the standard-FA26 evidence means
@@ -67,21 +68,26 @@ backups and machine logs are excluded from the repository.
   wings, the DRS-only subset even over another family's bits, wrong slot, the other two families,
   cars without DRS or without an ID, unavailable physics and unreadable cars in the gap count, a
   partial or physics-less Pro, mixed grids, departed cars and family switches that revoke validity first).
-- UI tests (11,331 checks): execute the real main Lua with a stub data adapter and a drawing
+- UI tests (15,190 checks): execute the real main Lua with a stub data adapter and a drawing
   recorder. They validate content, geometry, scale and language combinations, partial Pro data
   and the canvas origin, the badge rows (the Pro's SM | OT pair, the standard FA26's full-width SM
   without OT, and its dark / yellow / green states at speed and at rest, with unverified flags kept
   dark), the battery glyph's states (harvest / deploy / Boost / idle / unknown /
   invalid, the Boost body, the fill anchored opposite the terminal, the amber low-charge rule, the
   native car's fixed-intensity red and its request-driven green, the conventional car's absence, the
-  brightness easing and its pause behaviour), the two terminal sides as shape-by-shape mirror images
-  with the right one as default and fallback, and the terminal choice in the settings window; check
+  brightness easing and its pause behaviour), the placement of the percentage beside the terminal and
+  of the bolt at the anchored end, the bolt's outline, core, vertical position and drawing order over
+  the fill, the two terminal sides as shape-by-shape mirror images with the right one as default and
+  fallback, and the terminal choice in the settings window; check
   that the pedal arcs and recovery chip draw each update's values through an upshift cut and an
   auto-blip (three vehicle kinds, live and replay); and cover the `replayGaps` diagnostic.
 - 0.9.39 one-off checks, not part of the suites: 20 deliberate code mutations of the new badge and
   recording logic were each caught by these tests; 1,536 rendered states compared draw call by draw
   call with 0.9.38 show the Pro and conventional dials unchanged and the standard FA26 changed only in
   its badge row; and the 0.9.38 and 0.9.39 stream readers were run against each other's recordings.
+  For the glyph placement: 20 further mutations were each caught, and 3,072 rendered states (both
+  terminal sides) compared draw call by draw call with the build before that change differ only in the
+  bolt and the glyph's own text, with every new bolt and percentage position checked.
 - Deployment script: tested against a fake AC root in PowerShell 7 and Windows PowerShell 5.1,
   including per-file backups, hashes, unrelated-file retention, rollback, modified-file rejection
   and game-running rejection.

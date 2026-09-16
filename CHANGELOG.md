@@ -6,7 +6,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 | Version | In one line |
 | --- | --- |
-| 0.9.39 | **Changed:** the standard FA26 loses its always-dark `OT` badge, and its `SM` spans the row and turns yellow when available; **New:** DRS replay recording for every car with native DRS |
+| 0.9.39 | **Changed:** the glyph's percentage sits beside the terminal and the bolt at the other end; the standard FA26 loses its always-dark `OT` badge, and its `SM` spans the row and turns yellow when available; **New:** DRS replay recording for every car with native DRS |
 | 0.9.38 | **Changed:** the battery glyph faces right, like a common battery icon; a new setting turns it back to the left |
 | 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
 | 0.9.36 | **New:** the glyph reads `BOOST` while the command is held; a single-digit charge stays visible beside it |
@@ -27,9 +27,18 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 ## 0.9.39 — 2026-09-16
 
-Shows the standard FA26 only the systems it has, and records DRS for every car that has one. The Pro's
-display, the Pro stream and both stream layouts are those of 0.9.38.
+Puts the battery glyph's percentage next to its terminal, shows the standard FA26 only the systems it
+has, and records DRS for every car that has one. The Pro stream and both stream layouts are those of
+0.9.38.
 
+- The glyph's percentage now sits beside the terminal and the bolt at the other end, on both sides:
+  bolt, then percentage, with the terminal on the right (the default); percentage, then bolt, with it
+  on the left. A single-digit charge under Boost reads bolt, `BOOST`, number on the right-facing glyph
+  and number, `BOOST`, bolt on the left-facing one. The two sides are still mirror images.
+- The bolt now stands on the light fill for most of the charge range, so it is drawn like the digits:
+  a one-unit black outline replaces its small down-right shadow, and an opaque core in the body colour
+  under it keeps its translucent flow colour looking the same over the fill as over the empty body.
+  Its colours and states are unchanged.
 - The standard FA26 has no Overtake Mode. It is VRC's version for Assetto Corsa without CSP, so none of
   the Pro's scripted systems exist on it, and the game itself ignores the track's overtake zone. The
   `OT` badge, which could never light on this car, is gone, and `SM` now spans the badge row.
@@ -46,7 +55,7 @@ display, the Pro stream and both stream layouts are those of 0.9.38.
   and leave those slots unread, so a 0.9.39 recording shows those cars' DRS as unavailable there. The
   standard FA26 and FA25 slots restore exactly as before in both directions. Replays recorded before
   0.9.39 hold no DRS history for other cars.
-- The README illustration now shows the standard FA26's badge row.
+- The README illustration now shows the new glyph layout and the standard FA26's badge row.
 
 ## 0.9.38 — 2026-09-16
 

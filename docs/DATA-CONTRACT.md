@@ -1,7 +1,7 @@
 # Data contract
 
-This document describes version 0.9.39 (the standard FA26's badge row and the generic DRS recording
-family, on top of 0.9.38's right-facing battery glyph,
+This document describes version 0.9.39 (the glyph's percentage beside its terminal, the standard FA26's
+badge row and the generic DRS recording family, on top of 0.9.38's right-facing battery glyph,
 0.9.37's Straight Mode latch engaged state in the Pro stream,
 0.9.36's word BOOST inside the glyph while the command is held,
 on top of 0.9.35's standard-FA26 deployment request and the in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
@@ -66,15 +66,21 @@ from the one decorative easing declared at the end of this section.
 - **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
   is anchored to the wall opposite the terminal, whose side is a display setting. With the terminal on
   the right (the default since 0.9.38) that is the left wall, so deploying moves the fill edge to the
-  left and harvesting to the right; the bolt sits beside the terminal and the percentage at the left
-  end. With the terminal on the left (the only layout before 0.9.38) the whole glyph is drawn as the
-  mirror image about the dial's vertical axis, so the edge moves the other way; text is placed, never
-  reversed. The side changes positions only, never a state, colour, brightness or value. At or below 10 % the fill and digits turn amber; red is
+  left and harvesting to the right; since 0.9.39 the percentage sits beside the terminal
+  (right-aligned) and the bolt at the left end (before, each had the other's place). With the
+  terminal on the left (the only side before 0.9.38) the whole glyph is drawn as the mirror image
+  about the dial's vertical axis, so the edge moves the other way; text is placed, never reversed.
+  The side changes positions only, never a state, colour, brightness or value. At or below 10 % the fill and digits turn amber; red is
   never used for a level. While the Boost command is held the percentage gives way to the word
   `BOOST` (the badge's own placement, centred on the body), and an unknown charge then reads `BOOST`
   rather than `--`; at or below 9 % the number returns beside the word, still amber, and the word
   moves between the bolt and it. The fill is drawn in every case, so the level is always readable as
   a length.
+- **Bolt drawing**: the bolt stands at the anchored end, so it is drawn over the fill from about 13 %
+  charge up. It carries the digits' treatment: four black copies one unit off in each direction, then
+  an opaque core in the body colour, then the bolt in its own colour, so its translucency blends with
+  the body colour wherever it stands. Position is its only side-dependent property; the symbol is
+  never flipped.
 - **Body**: magenta while the manual Boost command is valid and true (`isHybridBoostActive` on the
   Pro, `kersButtonPressed` on the native FA26), otherwise the track colour. This is the former
   `BOOST` badge's rule; the badge itself returns when the glyph is switched off. On a magenta body

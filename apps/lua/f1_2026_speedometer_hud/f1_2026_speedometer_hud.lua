@@ -26,7 +26,9 @@ local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
 -- anchored to the RIGHT wall: deploying moves its edge to the right and harvesting to the left, the same
 -- directions as the panel's MGU-K bar. The two layouts are mirror images about the dial's vertical axis
 -- (x = 170), where the slot and both track caps are symmetric, so both keep the same clearances. Text is
--- placed as the mirror but never reversed.
+-- placed as the mirror but never reversed. On both sides the percentage sits beside the terminal and the
+-- bolt at the anchored end (since 0.9.39; 0.9.3-0.9.38 had them the other way round), so the bolt is drawn
+-- over the fill for most of the range and carries the digits' outline.
 -- The body colour follows the Boost button (the pill's own rule); the ring, nub and bolt follow the
 -- MGU-K flow of the current update: the Pro's signed power, or the standard car's recovery status
 -- and the deployment share its delivery controller requests.
@@ -80,7 +82,7 @@ local C = {
   batFill = rgbm(0.91, 0.92, 0.93, 0.92),   -- charge fill: neutral, so red only ever means harvesting
   batIdle = rgbm(1, 1, 1, 0.30),            -- battery ring while no energy flows, or the flow is unknown
   batBolt = rgbm(1, 1, 1, 0.70),            -- bolt and nub at rest
-  outline = rgbm(0, 0, 0, 0.85),            -- outline behind the digits drawn over the light fill
+  outline = rgbm(0, 0, 0, 0.85),            -- outline behind the digits and the bolt drawn over the light fill
 }
 
 -- 1-based, same table the car's own dash uses (display\styles\style_0\pages.lua puModes); 11 = SLO is the yellow one
@@ -563,10 +565,10 @@ local function textOutlined(font, str, size, x, y, w, h, color, s, hAlign)
   text(font, str, size, x, y, w, h, color, hAlign)
 end
 
-local function bolt(x, y, s, color, shift)
+local function bolt(x, y, s, color)
   for _, quad in ipairs(BAT_BOLT) do
     local p = {}
-    for k = 1, 4 do p[k] = vec2(x + quad[k][1] * s + shift, y + quad[k][2] * s + shift) end
+    for k = 1, 4 do p[k] = vec2(x + quad[k][1] * s, y + quad[k][2] * s) end
     ui.drawQuadFilled(p[1], p[2], p[3], p[4], color)
   end
 end
@@ -604,7 +606,8 @@ local function drawBattery(S, ox, oy, s, fontB)
   end
   -- The body follows the manual command of both adapters; automatic deployment never colours it.
   local boostOn = valid(S, 'boost') and S.boost
-  ui.drawRectFilled(p1, p2, boostOn and C.boost or C.track, BAT.r * s, ui.CornerFlags.All)
+  local bodyCol = boostOn and C.boost or C.track
+  ui.drawRectFilled(p1, p2, bodyCol, BAT.r * s, ui.CornerFlags.All)
   local socOk = valid(S, 'soc')
   local soc = socOk and clamp(S.soc, 0, 1) or 0
   local low = socOk and socLow(soc)
@@ -617,14 +620,18 @@ local function drawBattery(S, ox, oy, s, fontB)
     ui.drawRectFilled(vec2(fx1, y0 + BAT.inset * s), vec2(fx2, y0 + h - BAT.inset * s),
       low and C.yellow or C.batFill, math.min(3 * s, fw * 0.5), soc > 0.97 and ui.CornerFlags.All or anchor)
   end
-  -- The bolt sits beside the terminal, at the end the fill leaves first. Only its position is mirrored:
-  -- the symbol and its down-right shadow keep their usual orientation.
-  local boltX = right and x0 + w - (BAT.boltX + BAT.boltW) * s or x0 + BAT.boltX * s
+  -- The bolt sits at the anchored end, so from about 13 % charge up it is drawn over the light fill. It is
+  -- outlined like the digits, and an opaque core in the body colour goes under its translucent flow colour,
+  -- so it reads the same over the fill as over the empty body. Only its position is mirrored: the symbol
+  -- keeps its usual orientation.
+  local boltX = right and x0 + BAT.boltX * s or x0 + w - (BAT.boltX + BAT.boltW) * s
+  local boltY = y0 + BAT.boltY * s
   if socOk then
     -- on a magenta (Boost) body the bolt is white so it stays visible; the ring still carries the flow hue
     local boltCol = boostOn and C.white or (hue and rgbm(hue.r, hue.g, hue.b, 0.45 + 0.55 * i) or C.batBolt)
-    bolt(boltX, y0 + BAT.boltY * s, s, C.outline, 0.7 * s)
-    bolt(boltX, y0 + BAT.boltY * s, s, boltCol, 0)
+    for _, d in ipairs(OUTLINE_OFS) do bolt(boltX + d[1] * s, boltY + d[2] * s, s, C.outline) end
+    bolt(boltX, boltY, s, bodyCol)
+    bolt(boltX, boltY, s, boltCol)
   end
   local ringCol = hue and rgbm(hue.r, hue.g, hue.b, 0.35 + 0.65 * i) or C.batIdle
   ui.drawRect(p1, p2, ringCol, BAT.r * s, ui.CornerFlags.All, (BAT.ring + i) * s)
@@ -635,10 +642,10 @@ local function drawBattery(S, ox, oy, s, fontB)
   -- While the Boost command is held the body reads BOOST, exactly as the badge this glyph replaced;
   -- the fill still shows the level. The number returns beside the word once the displayed charge is
   -- down to a single digit, where it is the reading that matters, and is then always the amber one.
-  -- The number sits at the anchored end, clear of the bolt: left-aligned with the terminal on the right,
-  -- right-aligned with it on the left.
-  local dx, dw, align = x0 + 16 * s, w - 20 * s, ui.Alignment.End
-  if right then dx, align = x0 + 4 * s, ui.Alignment.Start end
+  -- The number sits beside the terminal, clear of the bolt: right-aligned with the terminal on the right,
+  -- left-aligned with it on the left.
+  local dx, dw, align = x0 + 4 * s, w - 20 * s, ui.Alignment.Start
+  if right then dx, align = x0 + 16 * s, ui.Alignment.End end
   local digits = socOk and (socPercent(soc) .. '%') or nil
   local digitsWithBoost = digits ~= nil and socPercent(soc) <= BAT.boostSoc
   if digits and (not boostOn or digitsWithBoost) then
@@ -655,11 +662,11 @@ local function drawBattery(S, ox, oy, s, fontB)
       -- between the bolt and the number it now shares the body with
       local boltEdge = (BAT.boltX + BAT.boltW) * s
       if right then
-        wx = x0 + 4 * s + numberW
-        ww = x0 + w - boltEdge - wx
-      else
         wx = x0 + boltEdge
         ww = x0 + w - 4 * s - numberW - wx
+      else
+        wx = x0 + 4 * s + numberW
+        ww = x0 + w - boltEdge - wx
       end
     end
     textOutlined(fontB, 'BOOST', BAT.digits * s, wx, y0, ww, h, C.white, s)

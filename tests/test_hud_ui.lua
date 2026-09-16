@@ -197,10 +197,12 @@ local function assertBounds(context)
   end
 end
 -- Battery glyph geometry at scale 1, terminal on the right (the default since 0.9.38): body (122, 270)
--- 92 x 20, digits box (126, 270) 72 x 20, nub (214, 276) 4 x 8. The left terminal (0.9.3-0.9.37) is the
--- mirror image about x = 170: body (126, 270), digits box (142, 270), nub (122, 276). The helpers follow
--- the current setting, including its fallback for unrecognised values.
-local BODY_X, DIGITS_X = { left = 126, right = 122 }, { left = 142, right = 126 }
+-- 92 x 20, bolt 128-136, digits box (138, 270) 72 x 20 right-aligned beside the terminal, nub (214, 276)
+-- 4 x 8. The left terminal (0.9.3-0.9.37) is the mirror image about x = 170: body (126, 270), digits box
+-- (130, 270) left-aligned, bolt 204-212, nub (122, 276). Since 0.9.39 the digits sit beside the terminal
+-- and the bolt at the anchored end (before: the other way round). The helpers follow the current setting,
+-- including its fallback for unrecognised values.
+local BODY_X, DIGITS_X = { left = 126, right = 122 }, { left = 130, right = 138 }
 local function terminal() return cfg.batteryTerminal == 'left' and 'left' or 'right' end
 local batteryColor = rgbm(0.91, 0.92, 0.93, 0.92)
 local batteryIdle = rgbm(1, 1, 1, 0.30)
@@ -219,6 +221,14 @@ local function quads()
   local count = 0
   for _, command in ipairs(commands) do if command.kind == 'quad' then count = count + 1 end end
   return count
+end
+-- The bolt is two convex quads, drawn four times as its black outline (one unit off in each direction),
+-- then once as an opaque core in the body colour and once in its own colour, in that order.
+local BOLT_QUADS = 12
+local function boltQuads()
+  local list = {}
+  for _, command in ipairs(commands) do if command.kind == 'quad' then list[#list + 1] = command end end
+  return list
 end
 local function batteryBody(scale) scale = scale or 1; return boxAt('rect', BODY_X[terminal()] * scale, 270 * scale, 92 * scale, 20 * scale) end
 local function batteryRing(scale) scale = scale or 1; return boxAt('border', BODY_X[terminal()] * scale, 270 * scale, 92 * scale, 20 * scale) end
@@ -274,7 +284,7 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
                 check(batteryWord(scale) and not batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'the held Boost command reads BOOST inside the glyph')
                 check(near(batteryWord(scale).w, 92 * scale) and near(batteryWord(scale).size, 13 * scale)
                   and batteryWord(scale).horizontal == ui.Alignment.Center, 'the word is centred on the whole body at every scale')
-                check(colorEquals(batteryBody(scale).color, boostColor) and quads() == 4, 'Boost button colours the battery body; bolt drawn')
+                check(colorEquals(batteryBody(scale).color, boostColor) and quads() == BOLT_QUADS, 'Boost button colours the battery body; bolt drawn')
               else
                 check(findText('BOOST') and not batteryBody(scale) and quads() == 0, 'BOOST badge returns when the glyph is off')
                 check(colorEquals(matchingFill(findText('BOOST')), boostColor), 'BOOST badge shows the button')
@@ -343,10 +353,33 @@ end
 local function batteryNub()
   return boxAt('rect', terminal() == 'right' and 214 or 122, 276, 4, 8)
 end
+local outlineColor = rgbm(0, 0, 0, 0.85)
+-- colours of the bolt's last pass (the symbol itself) and of the core under it
+local function boltColors()
+  local list, colors = boltQuads(), {}
+  if #list >= 2 then colors = { list[#list - 1].color, list[#list].color } end
+  return colors
+end
+local function boltCoreColors()
+  local list, colors = boltQuads(), {}
+  if #list >= 4 then colors = { list[#list - 3].color, list[#list - 2].color } end
+  return colors
+end
+local function boltSpan()
+  local list = boltQuads()
+  local x1, x2 = math.huge, -math.huge
+  for k = #list - 1, #list do x1, x2 = math.min(x1, list[k].x), math.max(x2, list[k].x + list[k].w) end
+  return x1, x2
+end
+local function commandIndex(target)
+  for k, command in ipairs(commands) do if command == target then return k end end
+end
 snapshots[1] = fixture('pro')                                   -- kw 175, boost true
 render()
 check(sameHue(batteryRing().color, boostColor) and near(batteryRing().color.m, 0.35 + 0.65 * 0.5), 'Boost while deploying: magenta ring at |kW| / 350 brightness')
 check(colorEquals(batteryBody().color, boostColor), 'Boost button colours the body')
+check(#boltCoreColors() == 2 and colorEquals(boltCoreColors()[1], boostColor) and colorEquals(boltCoreColors()[2], boostColor),
+  'the bolt core takes the magenta body colour')
 snapshots[1].boost, snapshots[1].kw = false, 200
 render()
 check(sameHue(batteryRing().color, green) and colorEquals(batteryBody().color, dark), 'deploying without Boost: green ring, dark body')
@@ -355,6 +388,32 @@ check(fill and near(fill.x + fill.w, 215.5) and near(fill.w, 87 * 0.75), 'charge
 check(fill.corners == ui.CornerFlags.Right, 'only the anchored end of a partial fill is rounded')
 check(batteryNub() and batteryNub().corners == ui.CornerFlags.Left and sameHue(batteryNub().color, green),
   'the terminal sits left of the body, rounded on its outer side, in the flow hue')
+-- left terminal: the percentage beside the terminal, the bolt at the anchored end
+local leftDigits = batteryDigits('75%')
+check(leftDigits and near(leftDigits.x, 130) and near(leftDigits.w, 72) and leftDigits.horizontal == ui.Alignment.Start,
+  'left terminal: the percentage is left-aligned beside the terminal')
+local boltLeft, boltRight = boltSpan()
+check(near(boltLeft, 204) and near(boltRight, 212), 'left terminal: the bolt sits at the anchored end')
+check(leftDigits.x + leftDigits.w <= boltLeft - 2 + 0.001, 'left terminal: the percentage box stops 2 units before the bolt')
+check(boltLeft >= fill.x and boltRight <= fill.x + fill.w, 'at 75 % the bolt lies over the fill')
+local quadList = boltQuads()
+check(#quadList == BOLT_QUADS and commandIndex(quadList[1]) > commandIndex(fill), 'the bolt is drawn over the fill')
+for k = 1, 8 do check(colorEquals(quadList[k].color, outlineColor), 'the bolt starts with its black outline') end
+check(colorEquals(boltCoreColors()[1], dark) and colorEquals(boltCoreColors()[2], dark), 'the bolt core takes the dark body colour')
+for q = 1, 2 do
+  local symbol, core = quadList[10 + q], quadList[8 + q]
+  check(near(core.x, symbol.x) and near(core.y, symbol.y) and near(core.w, symbol.w) and near(core.h, symbol.h), 'the core lies exactly under the symbol')
+  for k, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
+    local ghost = quadList[(k - 1) * 2 + q]
+    check(near(ghost.x, symbol.x + d[1]) and near(ghost.y, symbol.y + d[2]) and near(ghost.w, symbol.w) and near(ghost.h, symbol.h),
+      'each outline copy of the bolt sits one unit off the symbol')
+  end
+end
+check(sameHue(boltColors()[1], green) and near(boltColors()[1].m, 0.45 + 0.55 * 200 / 350), 'the bolt keeps its flow-hue brightness')
+snapshots[1].kw = 3
+render()
+check(colorEquals(boltColors()[1], rgbm(1, 1, 1, 0.70)) and colorEquals(boltColors()[2], rgbm(1, 1, 1, 0.70)), 'the resting bolt keeps its translucent white')
+snapshots[1].kw = 200
 snapshots[1].soc = 1
 render()
 check(batteryFill().corners == ui.CornerFlags.All and near(batteryFill().w, 87), 'a full fill is rounded at both ends')
@@ -362,13 +421,6 @@ snapshots[1].soc = 0.75
 snapshots[1].kw = -200
 render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 200 / 350), 'harvesting: red ring')
-local function boltColors()
-  local colors = {}
-  for _, command in ipairs(commands) do
-    if command.kind == 'quad' and not colorEquals(command.color, rgbm(0, 0, 0, 0.85)) then colors[#colors + 1] = command.color end
-  end
-  return colors
-end
 check(#boltColors() == 2 and sameHue(boltColors()[1], redHue), 'the bolt takes the flow hue')
 snapshots[1].boost = true
 render()
@@ -376,7 +428,7 @@ check(sameHue(batteryRing().color, redHue) and colorEquals(batteryBody().color, 
 check(#boltColors() == 2 and colorEquals(boltColors()[1], rgbm(1, 1, 1, 1)) and colorEquals(boltColors()[2], rgbm(1, 1, 1, 1)), 'the bolt is white on the magenta Boost body')
 snapshots[1].boost, snapshots[1].kw = false, 3
 render()
-check(colorEquals(batteryRing().color, batteryIdle) and quads() == 4, 'inside the 5 kW deadband the ring is idle and the bolt stays')
+check(colorEquals(batteryRing().color, batteryIdle) and quads() == BOLT_QUADS, 'inside the 5 kW deadband the ring is idle and the bolt stays')
 snapshots[1].kw, snapshots[1].valid.kw = 300, false
 render()
 check(colorEquals(batteryRing().color, batteryIdle) and batteryDigits('75%'), 'unknown power leaves the ring idle while the charge is shown')
@@ -409,20 +461,20 @@ render()
 check(batteryWord() and not batteryDigits('10%'), 'a two-figure charge stays hidden while Boost is held')
 snapshots[1].soc = 0.094
 render()
--- the word must clear the bolt (which ends at 140) and stop before the number (right-aligned to 214);
--- findTextAt matches the drawn text itself, not the four outline copies around it
-local boostWord = findTextAt('BOOST', 140, 270)
-check(boostWord and batteryDigits('9%'), 'a single-digit charge is shown beside BOOST')
-check(colorEquals(batteryDigits('9%').color, yellow), 'that number keeps the amber low-charge colour')
+-- left terminal: the number leads, left-aligned from 130, and the word fills the room up to the bolt
+-- (which starts at 204); findTextAt matches the drawn text itself, not the four outline copies around it
 local numberWidth = 2 * 13 * 0.55
-check(boostWord.x + boostWord.w <= 214 - numberWidth + 0.001, 'the word stops before the number')
+local boostWord = findTextAt('BOOST', 130 + numberWidth, 270)
+check(boostWord and batteryDigits('9%') and batteryDigits('9%').horizontal == ui.Alignment.Start, 'a single-digit charge is shown before BOOST')
+check(colorEquals(batteryDigits('9%').color, yellow), 'that number keeps the amber low-charge colour')
+check(near(boostWord.x + boostWord.w, 204), 'the word stops at the bolt')
 check(not batteryWord(), 'and is no longer centred on the body')
 check(colorEquals(boostWord.color, rgbm(1, 1, 1, 1)) and near(boostWord.size, 13) and boostWord.horizontal == ui.Alignment.Center,
   'the word beside the number is the same centred white body text')
-check(boostWord.w >= ui.measureDWriteText('BOOST', 13).x, 'the word still has room between the bolt and the number')
+check(boostWord.w >= ui.measureDWriteText('BOOST', 13).x, 'the word still has room between the number and the bolt')
 cfg.scale = 2.5
 render()
-local scaledWord = findTextAt('BOOST', 140 * 2.5, 270 * 2.5)
+local scaledWord = findTextAt('BOOST', (130 + numberWidth) * 2.5, 270 * 2.5)
 check(scaledWord and near(scaledWord.w, boostWord.w * 2.5) and batteryDigits('9%', 2.5), 'the single-digit layout scales with the HUD')
 cfg.scale = 1
 render()
@@ -520,19 +572,19 @@ print('Battery glyph (left terminal): flow states, Boost body, right-anchored fi
 
 -- The two terminal sides are mirror images of each other about the dial's vertical axis. Every shape and
 -- text box is mirrored, and text keeps its reading direction, so End and Start swap; the bolt is moved as
--- a whole, not flipped; its black shadow and the digits' outline copies keep their own offsets from what
+-- a whole, not flipped; the outline copies of the bolt and of the text keep their own offsets from what
 -- they belong to.
-local outlineColor = rgbm(0, 0, 0, 0.85)
 local MIRROR_ALIGN = { [ui.Alignment.Start] = ui.Alignment.End, [ui.Alignment.Center] = ui.Alignment.Center,
   [ui.Alignment.End] = ui.Alignment.Start }
 local MIRROR_CORNERS = { [0] = 0, [1] = 2, [2] = 1, [3] = 3, [4] = 8, [8] = 4, [12] = 12, [5] = 10, [10] = 5, [15] = 15 }
+-- bolt = the core and the coloured symbol (outline colour excluded); outlines = every outline-coloured draw
 local function glyphParts(scale)
-  local part = { shapes = {}, bolt = {}, shadows = {} }
+  local part = { shapes = {}, bolt = {}, outlines = {} }
   for _, command in ipairs(commands) do
     if (command.kind == 'rect' or command.kind == 'border' or command.kind == 'quad' or command.kind == 'text')
       and not command.rotating and command.x + command.w <= 340 * scale + 0.001
       and command.y >= 265 * scale - 0.001 and command.y + command.h <= 295 * scale + 0.001 then
-      local list = colorEquals(command.color, outlineColor) and part.shadows
+      local list = colorEquals(command.color, outlineColor) and part.outlines
         or (command.kind == 'quad' and part.bolt or part.shapes)
       list[#list + 1] = command
     end
@@ -552,11 +604,12 @@ local function span(list)
   for _, command in ipairs(list) do x1, x2 = math.min(x1, command.x), math.max(x2, command.x + command.w) end
   return x1, x2
 end
-local function checkShadows(part, scale, label)
-  local shadowQuads = {}
-  for _, command in ipairs(part.shadows) do
+local BOLT_OUTLINE = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+local function checkOutlines(part, scale, label)
+  local outlineQuads = {}
+  for _, command in ipairs(part.outlines) do
     if command.kind == 'quad' then
-      shadowQuads[#shadowQuads + 1] = command
+      outlineQuads[#outlineQuads + 1] = command
     else
       local owned = false
       for _, shape in ipairs(part.shapes) do
@@ -567,11 +620,24 @@ local function checkShadows(part, scale, label)
       check(owned, label .. ': each outline copy sits one unit off its own text: ' .. tostring(command.text))
     end
   end
-  check(#shadowQuads == #part.bolt, label .. ': one shadow per bolt quad')
-  for q = 1, #shadowQuads do
-    local a, b = part.bolt[q], shadowQuads[q]
-    check(near(b.x, a.x + 0.7 * scale) and near(b.y, a.y + 0.7 * scale) and near(b.w, a.w) and near(b.h, a.h),
-      label .. ': the bolt shadow keeps its down-right offset')
+  -- the bolt: four outline copies, then the core, then the symbol, two quads each
+  check(#part.bolt == 0 or #part.bolt == 4, label .. ': the bolt is a core and a symbol')
+  check(#outlineQuads == 2 * #part.bolt, label .. ': four outline copies per bolt quad')
+  if #part.bolt == 4 then
+    local y1, y2 = math.huge, -math.huge
+    for q = 3, 4 do y1, y2 = math.min(y1, part.bolt[q].y), math.max(y2, part.bolt[q].y + part.bolt[q].h) end
+    check(near(y1, 274 * scale) and near(y2, 286 * scale), label .. ': the bolt spans y 274-286 at every scale')
+    for q = 1, 2 do
+      local core, symbol = part.bolt[q], part.bolt[q + 2]
+      check(near(core.x, symbol.x) and near(core.y, symbol.y) and near(core.w, symbol.w) and near(core.h, symbol.h),
+        label .. ': the core lies under the symbol')
+      for k, d in ipairs(BOLT_OUTLINE) do
+        local ghost = outlineQuads[(k - 1) * 2 + q]
+        check(near(ghost.x, symbol.x + d[1] * scale) and near(ghost.y, symbol.y + d[2] * scale)
+          and near(ghost.w, symbol.w) and near(ghost.h, symbol.h),
+          label .. ': each bolt outline copy keeps its own offset')
+      end
+    end
   end
 end
 local mirrorStates = {
@@ -602,7 +668,7 @@ for _, scale in ipairs({ 0.5, 1, 2.5 }) do
       for key, value in pairs(case[4] or {}) do snapshots[1].valid[key] = value end
       render()
       parts[side] = glyphParts(scale)
-      checkShadows(parts[side], scale, label .. ' (' .. side .. ')')
+      checkOutlines(parts[side], scale, label .. ' (' .. side .. ')')
     end
     local left, right = parts.left, parts.right
     check(#left.shapes >= 5 and #left.shapes == #right.shapes, label .. ': the same shapes on both sides')
@@ -610,7 +676,7 @@ for _, scale in ipairs({ 0.5, 1, 2.5 }) do
       check(mirrored(left.shapes[k], right.shapes[k], scale),
         label .. ': ' .. tostring(left.shapes[k].text or left.shapes[k].kind) .. ' #' .. k .. ' is mirrored')
     end
-    check(#left.bolt == #right.bolt and #left.shadows == #right.shadows, label .. ': the same bolt and outline draws on both sides')
+    check(#left.bolt == #right.bolt and #left.outlines == #right.outlines, label .. ': the same bolt and outline draws on both sides')
     if #left.bolt > 0 then
       local l1, l2 = span(left.bolt)
       local r1, r2 = span(right.bolt)
@@ -638,24 +704,27 @@ fill = batteryFill()
 check(fill and near(fill.x, 124.5) and near(fill.w, 87 * 0.75) and fill.corners == ui.CornerFlags.Left,
   'right terminal: the fill is anchored to the left wall')
 local rightDigits = batteryDigits('75%')
-check(rightDigits and near(rightDigits.w, 72) and rightDigits.horizontal == ui.Alignment.Start,
-  'right terminal: the percentage is left-aligned at the anchored end')
-local boltLeft, boltRight = span(glyphParts(1).bolt)
-check(near(boltLeft, 200) and near(boltRight, 208), 'right terminal: the bolt sits beside the terminal')
-check(rightDigits.x + rightDigits.w <= boltLeft - 2 + 0.001, 'right terminal: the percentage box stops 2 units before the bolt')
+check(rightDigits and near(rightDigits.w, 72) and near(rightDigits.x + rightDigits.w, 210) and rightDigits.horizontal == ui.Alignment.End,
+  'right terminal: the percentage is right-aligned beside the terminal')
+boltLeft, boltRight = boltSpan()
+check(near(boltLeft, 128) and near(boltRight, 136), 'right terminal: the bolt sits at the anchored end')
+check(near(span(glyphParts(1).bolt), 128), 'right terminal: the core lies under the bolt')
+check(rightDigits.x >= boltRight + 2 - 0.001, 'right terminal: the percentage box starts 2 units after the bolt')
+check(boltLeft >= fill.x and boltRight <= fill.x + fill.w, 'right terminal: at 75 % the bolt lies over the fill')
 snapshots[1].soc = 0.5
 render()
 check(batteryFill() and near(batteryFill().x + batteryFill().w, 124.5 + 87 * 0.5), 'right terminal: less charge ends the fill further left')
 snapshots[1].soc, snapshots[1].boost = 0.094, true
 render()
-local rightWord = findTextAt('BOOST', 126 + numberWidth, 270)
-check(rightWord and batteryDigits('9%') and batteryDigits('9%').horizontal == ui.Alignment.Start,
-  'right terminal: a single-digit charge leads, left-aligned, before BOOST')
-check(near(rightWord.x + rightWord.w, 200) and rightWord.horizontal == ui.Alignment.Center, 'right terminal: the word is centred between the number and the bolt')
+local rightWord = findTextAt('BOOST', 136, 270)
+check(rightWord and batteryDigits('9%') and batteryDigits('9%').horizontal == ui.Alignment.End,
+  'right terminal: a single-digit charge follows BOOST, right-aligned beside the terminal')
+check(near(rightWord.x + rightWord.w, 210 - numberWidth) and rightWord.horizontal == ui.Alignment.Center,
+  'right terminal: the word is centred between the bolt and the number')
 check(rightWord.w >= ui.measureDWriteText('BOOST', 13).x, 'right terminal: the word still fits')
 snapshots[1].boost, snapshots[1].valid.soc = false, false
 render()
-check(batteryDigits('--') and batteryDigits('--').horizontal == ui.Alignment.Start and not batteryFill() and quads() == 0,
+check(batteryDigits('--') and batteryDigits('--').horizontal == ui.Alignment.End and not batteryFill() and quads() == 0,
   'right terminal: an invalid charge reads -- in the same place, without fill or bolt')
 cfg.batteryTerminal = 'up'
 snapshots[1] = fixture('pro')
