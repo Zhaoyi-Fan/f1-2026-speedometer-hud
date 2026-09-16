@@ -1,7 +1,8 @@
-# Known issues — version 0.9.37
+# Known issues — version 0.9.38
 
-Updated 2026-09-16 for version 0.9.37 (the Straight Mode latch fix, on 0.9.36's word BOOST, 0.9.35's
-standard-FA26 deployment request and 0.9.3's in-dial battery glyph; replay-stream layouts as in 0.9.2).
+Updated 2026-09-16 for version 0.9.38 (the battery terminal side setting, on 0.9.37's Straight Mode
+latch fix, 0.9.36's word BOOST, 0.9.35's standard-FA26 deployment request and 0.9.3's in-dial battery
+glyph; replay-stream layouts as in 0.9.2).
 
 ## Pro replays recorded between 0.9.2 and 0.9.36 lose their Straight Mode stretches
 

@@ -95,11 +95,11 @@ ui = {
   drawCircleFilled = function(center, radius, color)
     emit({ kind = 'circle', x = center.x, y = center.y, r = radius, color = color })
   end,
-  drawRectFilled = function(a, b, color)
-    emit({ kind = 'rect', x = a.x, y = a.y, w = b.x - a.x, h = b.y - a.y, color = color })
+  drawRectFilled = function(a, b, color, rounding, corners)
+    emit({ kind = 'rect', x = a.x, y = a.y, w = b.x - a.x, h = b.y - a.y, color = color, rounding = rounding, corners = corners })
   end,
-  drawRect = function(a, b, color)
-    emit({ kind = 'border', x = a.x, y = a.y, w = b.x - a.x, h = b.y - a.y, color = color })
+  drawRect = function(a, b, color, rounding, corners)
+    emit({ kind = 'border', x = a.x, y = a.y, w = b.x - a.x, h = b.y - a.y, color = color, rounding = rounding, corners = corners })
   end,
   drawQuadFilled = function(a, b, c, d, color)
     local x1, y1 = math.min(a.x, b.x, c.x, d.x), math.min(a.y, b.y, c.y, d.y)
@@ -126,6 +126,7 @@ ui = {
 script = {}
 loadHud()
 check(savedLogWrites == 1, 'only the existing launch diagnostic is written to the in-memory stub')
+check(cfg.batteryTerminal == 'left', 'the battery terminal is on the left unless the user chooses otherwise')
 
 local function fixture(kind)
   local result = { kind = kind, name = 'Synthetic', source = 'fixture', index = 0,
@@ -195,7 +196,11 @@ local function assertBounds(context)
     end
   end
 end
--- Battery glyph geometry at scale 1: body (126, 270) 92 x 20, digits box (142, 270) 72 x 20, nub (122, 276) 4 x 8.
+-- Battery glyph geometry at scale 1, terminal on the left (default): body (126, 270) 92 x 20, digits box
+-- (142, 270) 72 x 20, nub (122, 276) 4 x 8. The right terminal is the mirror image about x = 170: body
+-- (122, 270), digits box (126, 270), nub (214, 276). The helpers follow the current setting.
+local BODY_X, DIGITS_X = { left = 126, right = 122 }, { left = 142, right = 126 }
+local function terminal() return cfg.batteryTerminal == 'right' and 'right' or 'left' end
 local batteryColor = rgbm(0.91, 0.92, 0.93, 0.92)
 local batteryIdle = rgbm(1, 1, 1, 0.30)
 local yellow = rgbm(0.95, 0.75, 0.15, 1)
@@ -214,11 +219,11 @@ local function quads()
   for _, command in ipairs(commands) do if command.kind == 'quad' then count = count + 1 end end
   return count
 end
-local function batteryBody(scale) scale = scale or 1; return boxAt('rect', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
-local function batteryRing(scale) scale = scale or 1; return boxAt('border', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
-local function batteryDigits(value, scale) scale = scale or 1; return findTextAt(value, 142 * scale, 270 * scale) end
+local function batteryBody(scale) scale = scale or 1; return boxAt('rect', BODY_X[terminal()] * scale, 270 * scale, 92 * scale, 20 * scale) end
+local function batteryRing(scale) scale = scale or 1; return boxAt('border', BODY_X[terminal()] * scale, 270 * scale, 92 * scale, 20 * scale) end
+local function batteryDigits(value, scale) scale = scale or 1; return findTextAt(value, DIGITS_X[terminal()] * scale, 270 * scale) end
 -- The word BOOST is centred on the body, so its text box is the body itself; the badge is the wider pill.
-local function batteryWord(scale) scale = scale or 1; return findTextAt('BOOST', 126 * scale, 270 * scale) end
+local function batteryWord(scale) scale = scale or 1; return findTextAt('BOOST', BODY_X[terminal()] * scale, 270 * scale) end
 local function boostBadge(scale) scale = scale or 1; return boxAt('rect', 122 * scale, 270 * scale, 96 * scale, 20 * scale) end
 local function sameHue(a, b) return a and b and near(a.r, b.r) and near(a.g, b.g) and near(a.b, b.b) end
 for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
@@ -226,61 +231,65 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
     for _, scale in ipairs({ 0.5, 1, 2.5 }) do
       for _, showBattery in ipairs({ false, true }) do
         for _, showPanel in ipairs({ false, true }) do
-          cases = cases + 1
-          cfg.lang, cfg.scale, cfg.showBattery, cfg.showPanel = lang, scale, showBattery, showPanel
-          snapshots[0] = fixture(kind)
-          render()
-          local panel = showPanel and kind ~= 'drs'
-          local panelWidth = kind == 'vanilla' and 248 or 308
-          check(near(canvas.x, (340 + (panel and (12 + panelWidth) or 0)) * scale)
-            and near(canvas.y, 340 * scale), kind .. ': expected canvas dimensions')
-          local disc = commands[1]
-          check(disc.kind == 'circle' and near(disc.x, 170 * scale)
-            and near(disc.y, 170 * scale) and near(disc.r, 169 * scale), 'v0.9.1 circular dial geometry retained')
-          local speedText = findText('123')
-          check(speedText and near(speedText.y, 78 * scale) and near(speedText.h, 62 * scale), 'speed stack geometry retained')
-          check(findText('11001') and findText('KMH') and findText('RPM') and findText('GEAR'), 'base instrument labels retained')
-          check(panels() == (panel and 1 or 0), 'panel visibility follows settings and vehicle layout')
-          if kind == 'drs' then
-            local drs = findText('DRS')
-            check(drs and near(drs.x + drs.w * 0.5, 170 * scale) and near(drs.y, 251 * scale), 'single DRS badge centered')
-            check(not findText('SM') and not findText('OT') and not findText('BOOST'), 'legacy layout has no 2026 badge cluster')
-            check(not batteryBody(scale) and quads() == 0, 'legacy layout has no battery glyph')
-            check(colorEquals(matchingFill(drs), green), 'valid active native DRS illuminates')
-            check(not textContains('MJ') and not textContains('kW') and not textContains('PU '), 'legacy layout has no Pro energy fields')
-          else
-            check(findText('SM') and findText('OT') and not findText('DRS'), '2026 badge cluster retained')
-            if showBattery then
-              check(not boostBadge(scale) and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge')
-              -- both fixtures hold the Boost command, so the body reads BOOST instead of the charge
-              check(batteryWord(scale) and not batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'the held Boost command reads BOOST inside the glyph')
-              check(near(batteryWord(scale).w, 92 * scale) and near(batteryWord(scale).size, 13 * scale)
-                and batteryWord(scale).horizontal == ui.Alignment.Center, 'the word is centred on the whole body at every scale')
-              check(colorEquals(batteryBody(scale).color, boostColor) and quads() == 4, 'Boost button colours the battery body; bolt drawn')
+          for _, side in ipairs({ 'left', 'right' }) do
+            cases = cases + 1
+            cfg.lang, cfg.scale, cfg.showBattery, cfg.showPanel, cfg.batteryTerminal = lang, scale, showBattery, showPanel, side
+            snapshots[0] = fixture(kind)
+            render()
+            local panel = showPanel and kind ~= 'drs'
+            local panelWidth = kind == 'vanilla' and 248 or 308
+            check(near(canvas.x, (340 + (panel and (12 + panelWidth) or 0)) * scale)
+              and near(canvas.y, 340 * scale), kind .. ': expected canvas dimensions')
+            local disc = commands[1]
+            check(disc.kind == 'circle' and near(disc.x, 170 * scale)
+              and near(disc.y, 170 * scale) and near(disc.r, 169 * scale), 'v0.9.1 circular dial geometry retained')
+            local speedText = findText('123')
+            check(speedText and near(speedText.y, 78 * scale) and near(speedText.h, 62 * scale), 'speed stack geometry retained')
+            check(findText('11001') and findText('KMH') and findText('RPM') and findText('GEAR'), 'base instrument labels retained')
+            check(panels() == (panel and 1 or 0), 'panel visibility follows settings and vehicle layout')
+            if kind == 'drs' then
+              local drs = findText('DRS')
+              check(drs and near(drs.x + drs.w * 0.5, 170 * scale) and near(drs.y, 251 * scale), 'single DRS badge centered')
+              check(not findText('SM') and not findText('OT') and not findText('BOOST'), 'legacy layout has no 2026 badge cluster')
+              check(not batteryBody(scale) and quads() == 0, 'legacy layout has no battery glyph')
+              check(colorEquals(matchingFill(drs), green), 'valid active native DRS illuminates')
+              check(not textContains('MJ') and not textContains('kW') and not textContains('PU '), 'legacy layout has no Pro energy fields')
             else
-              check(findText('BOOST') and not batteryBody(scale) and quads() == 0, 'BOOST badge returns when the glyph is off')
-              check(colorEquals(matchingFill(findText('BOOST')), boostColor), 'BOOST badge shows the button')
-            end
-            if kind == 'pro' then
-              check(colorEquals(matchingFill(findText('OT')), green), 'Pro OT retains its active indication')
-              if panel then check(findText('MGU-K') and textContains('MJ') and findText('PU RACE'), 'Pro panel keeps energy and PU fields') end
-            else
-              check(not textContains('MJ') and not textContains('kW') and not textContains('PU ') and not findText('MGU-K'), 'ordinary layout excludes Pro-only quantities')
-              check(colorEquals(matchingFill(findText('OT')), dark), 'ordinary OT remains dark')
-              if panel then
-                check(findText('NODEPLOY') and findText('50%'), 'ordinary strategy and battery percentage shown')
-                local label = findText(lang == 'zh' and '电池' or 'Battery')
-                check(label and label.font == (lang == 'zh' and 'Microsoft YaHei UI' or 'Bahnschrift'), 'localized label uses expected font family')
+              check(findText('SM') and findText('OT') and not findText('DRS'), '2026 badge cluster retained')
+              if showBattery then
+                check(not boostBadge(scale) and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge: ' .. side)
+                -- both fixtures hold the Boost command, so the body reads BOOST instead of the charge
+                check(batteryWord(scale) and not batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'the held Boost command reads BOOST inside the glyph')
+                check(near(batteryWord(scale).w, 92 * scale) and near(batteryWord(scale).size, 13 * scale)
+                  and batteryWord(scale).horizontal == ui.Alignment.Center, 'the word is centred on the whole body at every scale')
+                check(colorEquals(batteryBody(scale).color, boostColor) and quads() == 4, 'Boost button colours the battery body; bolt drawn')
+              else
+                check(findText('BOOST') and not batteryBody(scale) and quads() == 0, 'BOOST badge returns when the glyph is off')
+                check(colorEquals(matchingFill(findText('BOOST')), boostColor), 'BOOST badge shows the button')
+                check(boostBadge(scale), 'the badge keeps its own slot whichever terminal side is set')
+              end
+              if kind == 'pro' then
+                check(colorEquals(matchingFill(findText('OT')), green), 'Pro OT retains its active indication')
+                if panel then check(findText('MGU-K') and textContains('MJ') and findText('PU RACE'), 'Pro panel keeps energy and PU fields') end
+              else
+                check(not textContains('MJ') and not textContains('kW') and not textContains('PU ') and not findText('MGU-K'), 'ordinary layout excludes Pro-only quantities')
+                check(colorEquals(matchingFill(findText('OT')), dark), 'ordinary OT remains dark')
+                if panel then
+                  check(findText('NODEPLOY') and findText('50%'), 'ordinary strategy and battery percentage shown')
+                  local label = findText(lang == 'zh' and '电池' or 'Battery')
+                  check(label and label.font == (lang == 'zh' and 'Microsoft YaHei UI' or 'Bahnschrift'), 'localized label uses expected font family')
+                end
               end
             end
+            assertBounds(kind .. '/' .. lang .. '/' .. tostring(scale) .. '/' .. side)
           end
-          assertBounds(kind .. '/' .. lang .. '/' .. tostring(scale))
         end
       end
     end
   end
 end
-print('UI matrix: ' .. tostring(cases) .. ' vehicle/language/scale/panel/battery combinations passed')
+cfg.batteryTerminal = 'left'
+print('UI matrix: ' .. tostring(cases) .. ' vehicle/language/scale/panel/battery/terminal combinations passed')
 
 cfg.scale, cfg.lang, cfg.showPanel, cfg.showBattery = 1, 'en', true, true
 snapshots[0] = fixture('pro')
@@ -314,8 +323,12 @@ local redHue = rgbm(245 / 255, 45 / 255, 33 / 255, 1)
 local function batteryFill()
   for _, command in ipairs(commands) do
     if command.kind == 'rect' and (colorEquals(command.color, batteryColor) or colorEquals(command.color, yellow))
-      and command.y > 270 and command.y < 290 and command.x > 126 then return command end
+      and command.y > 270 and command.y < 290 and command.x > 122 and command.x < 218 then return command end
   end
+end
+-- the terminal nub: 4 x 8, centred on the body's height, beside the body on the configured side
+local function batteryNub()
+  return boxAt('rect', terminal() == 'right' and 214 or 122, 276, 4, 8)
 end
 snapshots[1] = fixture('pro')                                   -- kw 175, boost true
 render()
@@ -326,6 +339,13 @@ render()
 check(sameHue(batteryRing().color, green) and colorEquals(batteryBody().color, dark), 'deploying without Boost: green ring, dark body')
 local fill = batteryFill()
 check(fill and near(fill.x + fill.w, 215.5) and near(fill.w, 87 * 0.75), 'charge fill is anchored to the right wall and scaled by SoC')
+check(fill.corners == ui.CornerFlags.Right, 'only the anchored end of a partial fill is rounded')
+check(batteryNub() and batteryNub().corners == ui.CornerFlags.Left and sameHue(batteryNub().color, green),
+  'the terminal sits left of the body, rounded on its outer side, in the flow hue')
+snapshots[1].soc = 1
+render()
+check(batteryFill().corners == ui.CornerFlags.All and near(batteryFill().w, 87), 'a full fill is rounded at both ends')
+snapshots[1].soc = 0.75
 snapshots[1].kw = -200
 render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 200 / 350), 'harvesting: red ring')
@@ -484,6 +504,226 @@ check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, light
 cfg.batterySmoothing = false
 sim.dt = nil
 print('Battery glyph: flow states, Boost body, right-anchored fill, low charge, native and conventional cars, easing passed')
+
+-- Terminal on the right: the mirror image of the default glyph about the dial's vertical axis. Every
+-- shape and text box is mirrored, and text keeps its reading direction, so End and Start swap; the
+-- bolt is moved as a whole, not flipped; its black shadow and the digits' outline copies keep their
+-- own offsets from what they belong to.
+local outlineColor = rgbm(0, 0, 0, 0.85)
+local MIRROR_ALIGN = { [ui.Alignment.Start] = ui.Alignment.End, [ui.Alignment.Center] = ui.Alignment.Center,
+  [ui.Alignment.End] = ui.Alignment.Start }
+local MIRROR_CORNERS = { [0] = 0, [1] = 2, [2] = 1, [3] = 3, [4] = 8, [8] = 4, [12] = 12, [5] = 10, [10] = 5, [15] = 15 }
+local function glyphParts(scale)
+  local part = { shapes = {}, bolt = {}, shadows = {} }
+  for _, command in ipairs(commands) do
+    if (command.kind == 'rect' or command.kind == 'border' or command.kind == 'quad' or command.kind == 'text')
+      and not command.rotating and command.x + command.w <= 340 * scale + 0.001
+      and command.y >= 265 * scale - 0.001 and command.y + command.h <= 295 * scale + 0.001 then
+      local list = colorEquals(command.color, outlineColor) and part.shadows
+        or (command.kind == 'quad' and part.bolt or part.shapes)
+      list[#list + 1] = command
+    end
+  end
+  return part
+end
+local function mirrored(a, b, scale)
+  if a.kind ~= b.kind or not colorEquals(a.color, b.color) then return false end
+  if not (near(b.x, 340 * scale - a.x - a.w) and near(b.y, a.y) and near(b.w, a.w) and near(b.h, a.h)) then return false end
+  if a.kind == 'text' then return a.text == b.text and near(a.size, b.size) and b.horizontal == MIRROR_ALIGN[a.horizontal] end
+  local corners = (a.corners == nil and b.corners == nil) or (a.corners ~= nil and MIRROR_CORNERS[a.corners] == b.corners)
+  local rounding = (a.rounding == nil and b.rounding == nil) or (a.rounding ~= nil and b.rounding ~= nil and near(a.rounding, b.rounding))
+  return corners and rounding
+end
+local function span(list)
+  local x1, x2 = math.huge, -math.huge
+  for _, command in ipairs(list) do x1, x2 = math.min(x1, command.x), math.max(x2, command.x + command.w) end
+  return x1, x2
+end
+local function checkShadows(part, scale, label)
+  local shadowQuads = {}
+  for _, command in ipairs(part.shadows) do
+    if command.kind == 'quad' then
+      shadowQuads[#shadowQuads + 1] = command
+    else
+      local owned = false
+      for _, shape in ipairs(part.shapes) do
+        if shape.kind == 'text' and shape.text == command.text and shape.horizontal == command.horizontal
+          and near(shape.w, command.w) and near(shape.h, command.h)
+          and near(math.abs(command.x - shape.x) + math.abs(command.y - shape.y), scale) then owned = true end
+      end
+      check(owned, label .. ': each outline copy sits one unit off its own text: ' .. tostring(command.text))
+    end
+  end
+  check(#shadowQuads == #part.bolt, label .. ': one shadow per bolt quad')
+  for q = 1, #shadowQuads do
+    local a, b = part.bolt[q], shadowQuads[q]
+    check(near(b.x, a.x + 0.7 * scale) and near(b.y, a.y + 0.7 * scale) and near(b.w, a.w) and near(b.h, a.h),
+      label .. ': the bolt shadow keeps its down-right offset')
+  end
+end
+local mirrorStates = {
+  { 'Pro deploying', 'pro', { boost = false, kw = 200 } },
+  { 'Pro harvesting', 'pro', { boost = false, kw = -200 } },
+  { 'Pro Boost', 'pro', { boost = true, kw = 175 } },
+  { 'Pro Boost at a single-digit charge', 'pro', { boost = true, kw = 350, soc = 0.094 } },
+  { 'Pro low charge', 'pro', { boost = false, kw = 250, soc = 0.08 } },
+  { 'Pro full and idle', 'pro', { boost = false, kw = 3, soc = 1 } },
+  { 'Pro empty', 'pro', { boost = false, kw = -100, soc = 0 } },
+  { 'Pro unknown charge', 'pro', { boost = false, kw = 120 }, { soc = false } },
+  { 'Pro unknown power', 'pro', { boost = false }, { kw = false } },
+  { 'native recovering under Boost', 'vanilla', {} },
+  { 'native deploying', 'vanilla', { boost = false, recovering = false, deployInput = 0.5 } },
+  { 'native Boost with an unknown charge', 'vanilla', { deployInput = 0.5 }, { soc = false } },
+}
+cfg.batterySmoothing, cfg.showBattery, cfg.showPanel, cfg.lang, sim.focusedCar = false, true, true, 'en', 1
+local mirrorCases = 0
+for _, scale in ipairs({ 0.5, 1, 2.5 }) do
+  cfg.scale = scale
+  for _, case in ipairs(mirrorStates) do
+    local label = case[1] .. ' at scale ' .. tostring(scale)
+    local parts = {}
+    for _, side in ipairs({ 'left', 'right' }) do
+      cfg.batteryTerminal = side
+      snapshots[1] = fixture(case[2])
+      for key, value in pairs(case[3]) do snapshots[1][key] = value end
+      for key, value in pairs(case[4] or {}) do snapshots[1].valid[key] = value end
+      render()
+      parts[side] = glyphParts(scale)
+      checkShadows(parts[side], scale, label .. ' (' .. side .. ')')
+    end
+    local left, right = parts.left, parts.right
+    check(#left.shapes >= 5 and #left.shapes == #right.shapes, label .. ': the same shapes on both sides')
+    for k = 1, #left.shapes do
+      check(mirrored(left.shapes[k], right.shapes[k], scale),
+        label .. ': ' .. tostring(left.shapes[k].text or left.shapes[k].kind) .. ' #' .. k .. ' is mirrored')
+    end
+    check(#left.bolt == #right.bolt and #left.shadows == #right.shadows, label .. ': the same bolt and outline draws on both sides')
+    if #left.bolt > 0 then
+      local l1, l2 = span(left.bolt)
+      local r1, r2 = span(right.bolt)
+      check(near(r1, 340 * scale - l2) and near(r2, 340 * scale - l1), label .. ': the bolt takes the mirrored place')
+      for k = 1, #left.bolt do
+        local a, b = left.bolt[k], right.bolt[k]
+        check(colorEquals(a.color, b.color) and near(b.x - r1, a.x - l1) and near(b.y, a.y) and near(b.w, a.w) and near(b.h, a.h),
+          label .. ': the bolt symbol is moved, not flipped')
+      end
+    end
+    mirrorCases = mirrorCases + 1
+  end
+end
+
+-- The same layout spelled out at scale 1.
+cfg.scale, cfg.batteryTerminal = 1, 'right'
+snapshots[1] = fixture('pro')
+snapshots[1].boost, snapshots[1].kw = false, 200
+render()
+check(batteryBody() and near(batteryBody().x, 122) and colorEquals(batteryBody().color, dark) and batteryRing(),
+  'right terminal: the body starts at the left edge of the slot')
+check(batteryNub() and batteryNub().corners == ui.CornerFlags.Right and sameHue(batteryNub().color, green),
+  'right terminal: the nub closes the slot on the right, rounded on its outer side, in the flow hue')
+fill = batteryFill()
+check(fill and near(fill.x, 124.5) and near(fill.w, 87 * 0.75) and fill.corners == ui.CornerFlags.Left,
+  'right terminal: the fill is anchored to the left wall')
+local rightDigits = batteryDigits('75%')
+check(rightDigits and near(rightDigits.w, 72) and rightDigits.horizontal == ui.Alignment.Start,
+  'right terminal: the percentage is left-aligned at the anchored end')
+local boltLeft, boltRight = span(glyphParts(1).bolt)
+check(near(boltLeft, 200) and near(boltRight, 208), 'right terminal: the bolt sits beside the terminal')
+check(rightDigits.x + rightDigits.w <= boltLeft - 2 + 0.001, 'right terminal: the percentage box stops 2 units before the bolt')
+snapshots[1].soc = 0.5
+render()
+check(batteryFill() and near(batteryFill().x + batteryFill().w, 124.5 + 87 * 0.5), 'right terminal: less charge ends the fill further left')
+snapshots[1].soc, snapshots[1].boost = 0.094, true
+render()
+local rightWord = findTextAt('BOOST', 126 + numberWidth, 270)
+check(rightWord and batteryDigits('9%') and batteryDigits('9%').horizontal == ui.Alignment.Start,
+  'right terminal: a single-digit charge leads, left-aligned, before BOOST')
+check(near(rightWord.x + rightWord.w, 200) and rightWord.horizontal == ui.Alignment.Center, 'right terminal: the word is centred between the number and the bolt')
+check(rightWord.w >= ui.measureDWriteText('BOOST', 13).x, 'right terminal: the word still fits')
+snapshots[1].boost, snapshots[1].valid.soc = false, false
+render()
+check(batteryDigits('--') and batteryDigits('--').horizontal == ui.Alignment.Start and not batteryFill() and quads() == 0,
+  'right terminal: an invalid charge reads -- in the same place, without fill or bolt')
+cfg.batteryTerminal = 'up'
+snapshots[1] = fixture('pro')
+render()
+check(boxAt('rect', 126, 270, 92, 20) and boxAt('rect', 122, 276, 4, 8), 'any stored value other than right draws the default left terminal')
+cfg.batteryTerminal = 'left'
+print('Battery terminal: ' .. tostring(mirrorCases) .. ' mirrored state/scale pairs and the right-terminal layout passed')
+
+-- Settings window: the terminal side is a pair of radio buttons right under the glyph switch.
+local widgets, clickOn = {}, nil
+local function widget(kind, label, state) widgets[#widgets + 1] = { kind = kind, label = label, state = state } end
+ui.header = function(label) widget('header', label) end
+ui.alignTextToFramePadding = function() widget('align') end
+ui.text = function(value) widget('text', value) end
+ui.sameLine = function() end
+ui.itemHovered = function() return true end
+ui.setTooltip = function(value) widget('tooltip', value) end
+ui.radioButton = function(label, checked) widget('radio', label, checked); return label == clickOn end
+ui.checkbox = function(label, checked) widget('checkbox', label, checked); return label == clickOn end
+ui.slider = function(_, value) return value end
+ui.inputText = function(_, value) return value, false end
+local function openSettings(click)
+  widgets, clickOn = {}, click
+  script.windowSettings(0.016)
+end
+local function widgetAt(kind, label)
+  for k, item in ipairs(widgets) do
+    if item.kind == kind and item.label == label then return k, item end
+  end
+end
+cfg.lang, cfg.batteryTerminal, cfg.showDiagText = 'en', 'left', false
+openSettings()
+local glyphRow = widgetAt('checkbox', 'Battery glyph in the dial (off: BOOST badge)')
+local labelRow = widgetAt('text', 'Battery terminal:')
+local _, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
+local _, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
+check(glyphRow and labelRow == glyphRow + 2 and widgets[glyphRow + 1].kind == 'align',
+  'the terminal row follows the glyph switch, its label aligned with the buttons')
+check(leftRadio and leftRadio.state == true and rightRadio and rightRadio.state == false, 'the default side is shown as Left')
+local tips = 0
+for _, item in ipairs(widgets) do
+  if item.kind == 'tooltip' and item.label:find('mirrored', 1, true) then tips = tips + 1 end
+end
+check(tips == 3, 'the label and both buttons explain the choice on hover')
+cfg.batteryTerminal = 'up'
+openSettings()
+_, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
+_, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
+check(leftRadio.state == true and rightRadio.state == false, 'an unknown stored value is shown as the Left it draws')
+openSettings('Right##batteryTerminal')
+check(cfg.batteryTerminal == 'right', 'choosing Right stores the right terminal')
+openSettings()
+_, leftRadio = widgetAt('radio', 'Left##batteryTerminal')
+_, rightRadio = widgetAt('radio', 'Right##batteryTerminal')
+check(leftRadio.state == false and rightRadio.state == true, 'the stored side is shown')
+snapshots[1] = fixture('pro')
+render()
+check(batteryBody() and near(batteryBody().x, 122), 'the dial draws the stored side on the next frame')
+openSettings('Left##batteryTerminal')
+check(cfg.batteryTerminal == 'left', 'choosing Left restores the default')
+openSettings('Right##batteryTerminal')
+cfg.lang = 'zh'
+openSettings()
+_, leftRadio = widgetAt('radio', '左##batteryTerminal')
+_, rightRadio = widgetAt('radio', '右##batteryTerminal')
+check(widgetAt('text', '电池接头：') and leftRadio and rightRadio and rightRadio.state == true, 'the terminal row is translated')
+tips = 0
+for _, item in ipairs(widgets) do
+  if item.kind == 'tooltip' and item.label:find('镜像', 1, true) then tips = tips + 1 end
+end
+check(tips == 3, 'the hover text is translated')
+openSettings('左##batteryTerminal')
+check(cfg.batteryTerminal == 'left', 'the translated Left button stores the same value')
+-- the rest of the window, including the log-mode readout, still runs
+cfg.lang, cfg.showDiagText = 'en', true
+snapshots[1].full = true
+render()
+openSettings()
+check(widgetAt('header', 'Diagnostics') and widgetAt('text', 'Source: fixture'), 'the whole settings window runs with the log-mode readout')
+cfg.showDiagText = false
+print('Settings: terminal side radio buttons, hover text and translation passed')
 
 snapshots[1] = fixture('pro')
 snapshots[1].soc, snapshots[1].kw, snapshots[1].strat = 0, 0, 0

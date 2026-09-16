@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.37'
+local VERSION = '0.9.38'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -20,8 +20,12 @@ local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
 
 -- Battery glyph in the dial (design units, v0.9.3). It takes the 96 x 20 slot of the former BOOST pill at
 -- (122, 270), the one row whose clearance from the throttle / brake track start caps was verified in game
--- (see drawDial). Terminal nub on the LEFT, charge fill anchored to the RIGHT wall: deploying moves the
--- fill edge to the right and harvesting to the left, the same directions as the panel's MGU-K bar.
+-- (see drawDial). By default the terminal nub is on the LEFT and the charge fill is anchored to the RIGHT
+-- wall: deploying moves the fill edge to the right and harvesting to the left, the same directions as the
+-- panel's MGU-K bar. With the terminal on the right (setting `batteryTerminal`) every shape is drawn as
+-- the mirror image about the dial's vertical axis (x = 170), where the slot and both track caps are
+-- symmetric, so every clearance is kept; the fill then drains to the left like a common battery icon.
+-- Text is placed as the mirror but never reversed.
 -- The body colour follows the Boost button (the pill's own rule); the ring, nub and bolt follow the
 -- MGU-K flow of the current update: the Pro's signed power, or the standard car's recovery status
 -- and the deployment share its delivery controller requests.
@@ -40,6 +44,7 @@ local cfg = ac.storage({
   scale = 1.0,
   showPanel = true,
   showBattery = true,
+  batteryTerminal = 'left',   -- 'left' or 'right'; any other value draws the left one
   batterySmoothing = true,
   followFocused = true,
   lockPlayer = false,
@@ -111,6 +116,13 @@ local STR = {
   scale = { en = 'Scale: %.2f', zh = '缩放：%.2f' },
   showPanel = { en = 'Show energy panel', zh = '显示能量面板' },
   showBattery = { en = 'Battery glyph in the dial (off: BOOST badge)', zh = '表盘内显示电池图标（关闭 = BOOST 徽章）' },
+  batteryTerminal = { en = 'Battery terminal:', zh = '电池接头：' },
+  terminalLeft = { en = 'Left', zh = '左' },
+  terminalRight = { en = 'Right', zh = '右' },
+  terminalTip = {
+    en = 'Left (default): deploying moves the fill edge to the right, like the MGU-K bar.\nRight: a common battery icon; the fill drains to the left.\nThe whole glyph is mirrored; the text keeps its reading direction.',
+    zh = '左（默认）：部署时填充边缘向右退，与 MGU-K 条方向一致。\n右：常见的电池图标，电量向左减少。\n整个图标左右镜像，文字方向不变。',
+  },
   batterySmooth = { en = 'Ease the battery ring brightness (120 ms, decorative)', zh = '电池环亮度平滑（120 ms，仅视觉）' },
   follow = { en = 'Follow camera-focused car', zh = '跟随镜头聚焦的车' },
   lock = { en = 'Lock to player car', zh = '锁定玩家车' },
@@ -562,7 +574,7 @@ local BAT_HUE = { harvest = C.red, deploy = C.green, boost = C.boost }
 -- it is held), fill length and digits = state of charge, ring / nub / bolt hue = flow direction, ring
 -- brightness / width and halo = the intensity of that flow
 -- (Pro: |kW| / 350; standard car: the requested deployment share, or the declared fixed recovery value),
--- optionally eased.
+-- optionally eased. Only the placement depends on a setting, the terminal side (see BAT).
 local function drawBattery(S, ox, oy, s, fontB)
   local state, raw = batteryFlow(S)
   local hue = BAT_HUE[state]
@@ -573,7 +585,10 @@ local function drawBattery(S, ox, oy, s, fontB)
   else
     i = batteryIntensity(S, raw or 0)   -- idle frames ease the brightness down to 0
   end
-  local x0, y0 = ox + (BAT.x + BAT.nubW) * s, oy + BAT.y * s        -- body box; the nub sits to its left
+  -- Body box, beside the nub. With the terminal on the right every position below is the mirror image
+  -- of the default one about the dial's vertical axis.
+  local right = cfg.batteryTerminal == 'right'
+  local x0, y0 = ox + (right and BAT.x or BAT.x + BAT.nubW) * s, oy + BAT.y * s
   local w, h = (BAT.w - BAT.nubW) * s, BAT.h * s
   local p1, p2 = vec2(x0, y0), vec2(x0 + w, y0 + h)
   if hue then
@@ -590,31 +605,42 @@ local function drawBattery(S, ox, oy, s, fontB)
   local soc = socOk and clamp(S.soc, 0, 1) or 0
   local low = socOk and socLow(soc)
   if socOk and soc > 0.005 then
+    -- anchored to the wall opposite the terminal
     local lx1, lx2 = x0 + BAT.inset * s, x0 + w - BAT.inset * s
     local fw = (lx2 - lx1) * soc
-    ui.drawRectFilled(vec2(lx2 - fw, y0 + BAT.inset * s), vec2(lx2, y0 + h - BAT.inset * s),
-      low and C.yellow or C.batFill, math.min(3 * s, fw * 0.5), soc > 0.97 and ui.CornerFlags.All or ui.CornerFlags.Right)
+    local fx1, fx2, anchor = lx2 - fw, lx2, ui.CornerFlags.Right
+    if right then fx1, fx2, anchor = lx1, lx1 + fw, ui.CornerFlags.Left end
+    ui.drawRectFilled(vec2(fx1, y0 + BAT.inset * s), vec2(fx2, y0 + h - BAT.inset * s),
+      low and C.yellow or C.batFill, math.min(3 * s, fw * 0.5), soc > 0.97 and ui.CornerFlags.All or anchor)
   end
+  -- The bolt sits beside the terminal, at the end the fill leaves first. Only its position is mirrored:
+  -- the symbol and its down-right shadow keep their usual orientation.
+  local boltX = right and x0 + w - (BAT.boltX + BAT.boltW) * s or x0 + BAT.boltX * s
   if socOk then
     -- on a magenta (Boost) body the bolt is white so it stays visible; the ring still carries the flow hue
     local boltCol = boostOn and C.white or (hue and rgbm(hue.r, hue.g, hue.b, 0.45 + 0.55 * i) or C.batBolt)
-    bolt(x0 + BAT.boltX * s, y0 + BAT.boltY * s, s, C.outline, 0.7 * s)
-    bolt(x0 + BAT.boltX * s, y0 + BAT.boltY * s, s, boltCol, 0)
+    bolt(boltX, y0 + BAT.boltY * s, s, C.outline, 0.7 * s)
+    bolt(boltX, y0 + BAT.boltY * s, s, boltCol, 0)
   end
   local ringCol = hue and rgbm(hue.r, hue.g, hue.b, 0.35 + 0.65 * i) or C.batIdle
   ui.drawRect(p1, p2, ringCol, BAT.r * s, ui.CornerFlags.All, (BAT.ring + i) * s)
   local ny = y0 + (BAT.h - BAT.nubH) * 0.5 * s
-  ui.drawRectFilled(vec2(ox + BAT.x * s, ny), vec2(x0, ny + BAT.nubH * s), hue and ringCol or C.batBolt, 1.5 * s, ui.CornerFlags.Left)
+  local nx1, nx2, nubCorners = ox + BAT.x * s, x0, ui.CornerFlags.Left
+  if right then nx1, nx2, nubCorners = x0 + w, ox + (BAT.x + BAT.w) * s, ui.CornerFlags.Right end
+  ui.drawRectFilled(vec2(nx1, ny), vec2(nx2, ny + BAT.nubH * s), hue and ringCol or C.batBolt, 1.5 * s, nubCorners)
   -- While the Boost command is held the body reads BOOST, exactly as the badge this glyph replaced;
   -- the fill still shows the level. The number returns beside the word once the displayed charge is
   -- down to a single digit, where it is the reading that matters, and is then always the amber one.
-  local dx, dw = x0 + 16 * s, w - 20 * s
+  -- The number sits at the anchored end, clear of the bolt: right-aligned by default, left-aligned
+  -- when the terminal is on the right.
+  local dx, dw, align = x0 + 16 * s, w - 20 * s, ui.Alignment.End
+  if right then dx, align = x0 + 4 * s, ui.Alignment.Start end
   local digits = socOk and (socPercent(soc) .. '%') or nil
   local digitsWithBoost = digits ~= nil and socPercent(soc) <= BAT.boostSoc
   if digits and (not boostOn or digitsWithBoost) then
-    textOutlined(fontB, digits, BAT.digits * s, dx, y0, dw, h, low and C.yellow or C.white, s, ui.Alignment.End)
+    textOutlined(fontB, digits, BAT.digits * s, dx, y0, dw, h, low and C.yellow or C.white, s, align)
   elseif not socOk and not boostOn then
-    text(fontB, '--', BAT.digits * s, dx, y0, dw, h, C.dim, ui.Alignment.End)
+    text(fontB, '--', BAT.digits * s, dx, y0, dw, h, C.dim, align)
   end
   if boostOn then
     local wx, ww = x0, w                      -- centred on the body, the badge's own placement
@@ -622,8 +648,15 @@ local function drawBattery(S, ox, oy, s, fontB)
       ui.pushDWriteFont(fontB)
       local numberW = ui.measureDWriteText(digits, BAT.digits * s).x
       ui.popDWriteFont()
-      wx = x0 + (BAT.boltX + BAT.boltW) * s    -- between the bolt and the number it now shares with
-      ww = x0 + w - 4 * s - numberW - wx
+      -- between the bolt and the number it now shares the body with
+      local boltEdge = (BAT.boltX + BAT.boltW) * s
+      if right then
+        wx = x0 + 4 * s + numberW
+        ww = x0 + w - boltEdge - wx
+      else
+        wx = x0 + boltEdge
+        ww = x0 + w - 4 * s - numberW - wx
+      end
     end
     textOutlined(fontB, 'BOOST', BAT.digits * s, wx, y0, ww, h, C.white, s)
   end
@@ -849,6 +882,10 @@ function script.windowMain(dt)
   ui.dummy(vec2((DIAL_W + (panel and (PANEL_GAP + panelW) or 0)) * s, 340 * s))
 end
 
+local function hoverTip(key)
+  if ui.itemHovered() then ui.setTooltip(L(key)) end
+end
+
 function script.windowSettings(dt)
   ui.header(L('language'))
   if ui.radioButton('English', cfg.lang ~= 'zh') then cfg.lang = 'en' end
@@ -859,6 +896,15 @@ function script.windowSettings(dt)
   cfg.scale = ui.slider('##scale', cfg.scale, 0.5, 2.5, L('scale'))
   if ui.checkbox(L('showPanel'), cfg.showPanel) then cfg.showPanel = not cfg.showPanel end
   if ui.checkbox(L('showBattery'), cfg.showBattery) then cfg.showBattery = not cfg.showBattery end
+  ui.alignTextToFramePadding()
+  ui.text(L('batteryTerminal'))
+  hoverTip('terminalTip')
+  ui.sameLine(0, 12)
+  if ui.radioButton(L('terminalLeft') .. '##batteryTerminal', cfg.batteryTerminal ~= 'right') then cfg.batteryTerminal = 'left' end
+  hoverTip('terminalTip')
+  ui.sameLine(0, 16)
+  if ui.radioButton(L('terminalRight') .. '##batteryTerminal', cfg.batteryTerminal == 'right') then cfg.batteryTerminal = 'right' end
+  hoverTip('terminalTip')
   if ui.checkbox(L('batterySmooth'), cfg.batterySmoothing) then cfg.batterySmoothing = not cfg.batterySmoothing end
   if ui.checkbox(L('follow'), cfg.followFocused) then cfg.followFocused = not cfg.followFocused end
   if ui.checkbox(L('lock'), cfg.lockPlayer) then cfg.lockPlayer = not cfg.lockPlayer end

@@ -62,12 +62,17 @@ The glyph in the dial draws the current update only. Nothing is smoothed, delaye
 from the one decorative easing declared at the end of this section.
 
 - **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
-  is anchored to the right wall, so deploying moves its edge to the right and harvesting to the
-  left. At or below 10 % the fill and digits turn amber; red is never used for a level. While the
-  Boost command is held the percentage gives way to the word `BOOST` (the badge's own placement,
-  centred on the body), and an unknown charge then reads `BOOST` rather than `--`; at or below 9 %
-  the number returns beside the word, still amber, and the word moves between the bolt and it. The
-  fill is drawn in every case, so the level is always readable as a length.
+  is anchored to the wall opposite the terminal. With the terminal on the left (the default) that is
+  the right wall, so deploying moves its edge to the right and harvesting to the left. With the
+  terminal on the right (a display setting) the whole glyph is drawn as the mirror image about the
+  dial's vertical axis, so the edge moves the other way, the bolt sits beside the terminal and the
+  percentage at the left end; text is placed, never reversed. The side changes positions only, never
+  a state, colour, brightness or value. At or below 10 % the fill and digits turn amber; red is
+  never used for a level. While the Boost command is held the percentage gives way to the word
+  `BOOST` (the badge's own placement, centred on the body), and an unknown charge then reads `BOOST`
+  rather than `--`; at or below 9 % the number returns beside the word, still amber, and the word
+  moves between the bolt and it. The fill is drawn in every case, so the level is always readable as
+  a length.
 - **Body**: magenta while the manual Boost command is valid and true (`isHybridBoostActive` on the
   Pro, `kersButtonPressed` on the native FA26), otherwise the track colour. This is the former
   `BOOST` badge's rule; the badge itself returns when the glyph is switched off. On a magenta body

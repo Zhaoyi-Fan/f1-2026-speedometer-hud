@@ -6,6 +6,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 | Version | In one line |
 | --- | --- |
+| 0.9.38 | **New:** a setting puts the battery glyph's terminal on the left (default) or the right |
 | 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
 | 0.9.36 | **New:** the glyph reads `BOOST` while the command is held; a single-digit charge stays visible beside it |
 | 0.9.35 | **New:** the standard FA26 shows its own deployment — green ring, a `Deploying` chip, recorded into replays |
@@ -22,6 +23,25 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 | 0.3 | **New:** negative MGU-K caps drawn as super-clipping |
 | 0.2 | **Changed:** 1-based PU names, opaque arc tracks, a persistent diagnostics file |
 | 0.1 | First build |
+
+## 0.9.38 — 2026-09-16
+
+Lets the battery glyph face either way. The default is unchanged, so the dial looks exactly as in
+0.9.37 until the setting is changed; the adapters and both replay streams are those of 0.9.37.
+
+- New setting "Battery terminal: Left / Right", directly under "Battery glyph in the dial". Right
+  draws the glyph as the mirror image of the default about the dial's vertical axis, the way most
+  battery icons face: the terminal closes the slot on the right, the fill is anchored to the left wall
+  and drains towards it (deploying moves its edge to the left, harvesting to the right), the bolt sits
+  beside the terminal and the percentage is left-aligned at the other end. A single-digit charge under
+  Boost then reads number, `BOOST`, bolt.
+- Only positions change. Colours, states, brightness, the word `BOOST`, the low-charge rule and the
+  data behind them are the same on both sides; the text is never reversed, and the bolt keeps its
+  shape and its shadow. The slot and the throttle and brake track caps beside it are symmetric about
+  the dial's centre line, so the mirrored glyph keeps every clearance of the default one.
+- The energy panel is not affected. With the terminal on the right, the glyph's fill edge moves the
+  opposite way to the panel's MGU-K bar, which keeps deployment on its right.
+- Hovering the setting explains the difference. An unrecognised stored value draws the default side.
 
 ## 0.9.37 — 2026-09-16
 
