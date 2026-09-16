@@ -137,7 +137,7 @@ local function fixture(kind)
     result.otPending, result.charge, result.pl, result.plp, result.pitLimiter = false, false, false, false, false
   elseif kind == 'vanilla' then
     result.soc, result.strategyName, result.recovering, result.smActive, result.boost = 0.5, 'NODEPLOY', true, true, true
-    result.strategy, result.otActive, result.otPending = 3, false, false
+    result.strategy, result.otActive, result.otPending, result.deployInput = 3, false, false, 0
   else
     result.drsPresent, result.drsActive = true, true
   end
@@ -353,13 +353,44 @@ check(batteryDigits('10%') and colorEquals(batteryDigits('10%').color, yellow) a
 snapshots[1].soc = 0.105
 render()
 check(batteryDigits('11%') and colorEquals(batteryDigits('11%').color, rgbm(1, 1, 1, 1)) and colorEquals(batteryFill().color, batteryColor), '11% is drawn in the normal colours')
-snapshots[1] = fixture('vanilla')                                -- recovering true, boost true
+snapshots[1] = fixture('vanilla')                                -- recovering true, boost true, no deployment
 render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'native recovery: red ring at the declared fixed intensity')
 check(colorEquals(batteryBody().color, boostColor), 'native Boost button colours the body only')
 snapshots[1].recovering = false
 render()
-check(colorEquals(batteryRing().color, batteryIdle), 'native car without recovery: idle ring, never green')
+check(colorEquals(batteryRing().color, batteryIdle), 'native car neither deploying nor recovering: idle ring')
+-- Native deployment: the share the car's delivery controller requests, not a measured power.
+snapshots[1].boost, snapshots[1].deployInput = false, 0.5
+render()
+check(sameHue(batteryRing().color, green) and near(batteryRing().color.m, 0.35 + 0.65 * 0.5), 'native deployment: green ring at the requested share')
+check(colorEquals(batteryBody().color, dark), 'automatic deployment never colours the body')
+check(#boltColors() == 2 and sameHue(boltColors()[1], green), 'the native bolt takes the deployment hue')
+snapshots[1].boost = true
+render()
+check(sameHue(batteryRing().color, boostColor) and colorEquals(batteryBody().color, boostColor), 'native Boost while deploying: magenta ring and body')
+check(#boltColors() == 2 and colorEquals(boltColors()[1], rgbm(1, 1, 1, 1)), 'the bolt is white on the native magenta body')
+snapshots[1].boost, snapshots[1].deployInput = false, 0.02
+render()
+check(colorEquals(batteryRing().color, batteryIdle), 'a requested share inside the deadband leaves the ring idle')
+snapshots[1].deployInput, snapshots[1].recovering = 0.4, true
+render()
+check(sameHue(batteryRing().color, green), 'the requested share of this update outranks the recovery status')
+snapshots[1].valid.deployInput = false
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'without a requested share the recovery status still draws red')
+-- The native panel names both flow states, in the glyph's colours.
+snapshots[1] = fixture('vanilla')
+snapshots[1].deployInput, snapshots[1].recovering = 0.5, false
+render()
+check(colorEquals(matchingFill(findText('Deploying')), green), 'the native panel lights its deployment chip')
+check(colorEquals(matchingFill(findText('Recovering')), dark), 'the recovery chip stays dark while the car deploys')
+snapshots[1].deployInput, snapshots[1].recovering = 0, true
+render()
+check(colorEquals(matchingFill(findText('Deploying')), dark) and colorEquals(matchingFill(findText('Recovering')), redHue), 'a valid zero share leaves the deployment chip dark while recovery lights')
+snapshots[1].valid.deployInput = false
+render()
+check(findText('Deploying --') and colorEquals(matchingFill(findText('Deploying --')), dark), 'an unavailable share is marked and never lit')
 snapshots[1] = fixture('drs')
 render()
 check(not batteryBody() and quads() == 0, 'conventional cars draw no battery glyph')

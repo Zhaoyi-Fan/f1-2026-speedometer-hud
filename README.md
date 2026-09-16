@@ -5,8 +5,10 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.10.0** replaces the two side bars with a battery glyph inside the dial; the adapters,
-panels and replay streams are those of 0.9.2. See
+Version **0.9.35** gives the standard FA26 its own deployment indication on the battery glyph that
+**0.9.3** introduced in place of the two side bars; the Pro display and adapter are those of 0.9.3,
+the standard car's compact panel gains a second chip, and both replay-stream layouts are unchanged
+from 0.9.2. The [changelog](CHANGELOG.md) lists what each version changed. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
 is still pending.
 The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
@@ -26,7 +28,7 @@ remote cars can expose fewer fields; missing data is never replaced by the playe
 | Car | Display | Energy and replay |
 | --- | --- | --- |
 | FA26 Pro, exact ID `vrc_formula_alpha_2026_csp` | SM / OT / BOOST | Full Pro panel and original Pro replay stream |
-| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode and recovery state |
+| Native FA26, exact ID `vrc_formula_alpha_2026` | Simplified SM / OT / BOOST; OT stays dark, the car has no overtake channel | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode, deployment request and recovery state |
 | FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; exact FA25 CSP gets a small DRS recording when native replay history is unavailable |
 | Cars without DRS | The same DRS indicator, always dark | No energy panel |
 
@@ -52,7 +54,8 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 The terminal is on the left and the fill is anchored to the right, so deploying moves the fill edge to
 the right and harvesting moves it to the left, the same directions as the panel's MGU-K bar. The ring
 around it shows the MGU-K flow of the current update, with brightness, width and a small halo
-following the power. Nothing animates on its own apart from the optional 120 ms brightness easing
+following the power on the Pro and the deployment request on the standard FA26. Nothing animates on
+its own apart from the optional 120 ms brightness easing
 (on by default; the state and hue are never eased). The body carries the Boost button exactly as the
 former `BOOST` badge did, so Boost held into a braking zone reads as a magenta body with a red ring.
 Switching the glyph off in settings brings the `BOOST` badge back.
@@ -70,18 +73,23 @@ Switching the glyph off in settings brings the `BOOST` badge back.
 - Status chips: SM state, OT state, Boost, Charge mode, PL / PLP (power-limited states), pit limiter.
 
 **Native FA26** has a compact panel with battery percentage, the native deployment name and a
-recovery indicator. Its battery glyph shows a red ring at a fixed brightness while the car reports
-recovery and a magenta body while the button is pressed; it never turns green, because deployment
-is not observable on this car. BOOST represents
-the native manual override command, not automatic deployment or guaranteed output power.
+`Deploying` / `Recovering` chip pair. Its battery glyph shows a green ring while the car's delivery
+controller requests energy, brightness following that request; a red ring at a fixed brightness
+while the car reports recovery; and a magenta body while the button is pressed. The request is what
+the selected map asks for at the current throttle and speed, not a measured output: the ring is
+never green in `NODEPLOY`, at very low speed or at the top of the speed range, where recovery can
+still turn it red, and the green and red
+brightnesses are separate declared scales that cannot be compared with each other or with the Pro's
+power scale. BOOST represents the native manual override command, not automatic deployment or
+guaranteed output power.
 Native SM uses only off / available / active; it has no Pro pre-latch or late state. OT stays
-dark. Recovery is distinct from Pro Charge / Anti mode. No Pro MJ capacity, kW estimate,
-lap-recovery quota, split or PU mode is assigned to this car.
+dark, because this car has no overtake channel. Recovery is distinct from Pro Charge / Anti mode.
+No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigned to this car.
 
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.10.0 dial state illustrations](docs/dial-states.png)
+![v0.9.35 dial state illustrations](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -113,8 +121,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.10.0.zip` from the
-[v0.10.0 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.10.0)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.35.zip` from the
+[v0.9.35 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.35)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -122,7 +130,7 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.10.0**. The dial no longer has side
+replay and check that the settings window shows version **0.9.35**. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.
@@ -158,6 +166,12 @@ A separate native-state stream uses 22 slots at 6 bytes per slot each replay fra
 vehicle/slot identity and independent validity bits. It records native FA26 fields and only
 the necessary DRS state for the exact FA25 CSP model. Other conventional cars are not all
 assigned extra recording. Actual file growth depends on replay timing and compression.
+
+Version 0.9.35 added the standard FA26's deployment request to that stream without changing its
+size or layout: it travels in four free bits of the byte that already carried the strategy index.
+Recordings made by earlier versions restore exactly as before. A recording made by 0.9.35 and
+opened in an earlier version shows the standard FA26's strategy as unavailable, because those
+versions accept that byte only as a plain index; every other recorded field still restores.
 
 When that data is present, the HUD can show the recorded energy readings in saved and in-session
 replays. Other users with the app installed can also view the data in a shared replay.

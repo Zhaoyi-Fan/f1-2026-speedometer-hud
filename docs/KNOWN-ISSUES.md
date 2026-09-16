@@ -1,14 +1,39 @@
-# Known issues — version 0.10.0
+# Known issues — version 0.9.35
 
-Updated 2026-09-15 for version 0.10.0 (in-dial battery glyph; adapters and replay streams as in 0.9.2).
+Updated 2026-09-16 for version 0.9.35 (the standard FA26's deployment request, on 0.9.3's in-dial
+battery glyph; replay-stream layouts as in 0.9.2).
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validation scope.
 
-## Battery ring around automatic upshifts: not yet sampled
+## Battery ring around automatic upshifts: sampled, no flicker
 
-The automatic gearbox cuts the physics throttle for one or two frames on each upshift (next
-section). Whether `rearMotorPowerKW` also dips below −5 kW during that cut, which would colour the
-battery ring red for those frames, has not been sampled: every Pro session recorded so far used
-manual shifts. If it does, the ring shows it as reported, like the throttle arc.
+**Observed, not proved.** The automatic gearbox cuts the physics throttle for one or two frames on
+each upshift (next section), and the open question was whether `rearMotorPowerKW` dips below the
+−5 kW deadband during that cut and turns the ring red for those frames. A session driven with the
+automatic gearbox on 2026-09-16 showed no such flicker: the throttle arc collapses on each upshift
+while the ring holds its state. This is an observation of the drawn result, not a measurement that
+the reported power stayed inside the deadband.
+
+## The standard FA26's green ring: what is normal
+
+The ring follows the deployment request of the car's own delivery map, so several idle states are
+the car behaving correctly rather than a missing reading:
+
+- `NODEPLOY` requests nothing at any speed, so the ring is never green while that map is selected;
+  it still turns red whenever the car reports recovery;
+- the maps request nothing below a low speed threshold, so slow corner exits and standing starts
+  deploy nothing at full throttle, and nothing at the very top of the speed range either;
+- the request is proportional to the throttle, so it follows the same gearbox assists as the
+  throttle arc: the automatic upshift cut darkens it briefly and the downshift auto-blip can light
+  it for 75–90 ms inside a braking zone. Like the arc, this is drawn as reported;
+- the maps do not rank by how much they request: one can ask for a smaller share than another at
+  the same throttle and speed and trade it for a wider speed range, so the ring is legitimately
+  dimmer in one map than in another. The brightness is the request, not a ranking;
+- a replay stores the request in steps of 1/14, while the live ring lights from 0.02 up. A request
+  between those two figures therefore reads as a faint green ring live and as an idle ring in the
+  replay of the same lap. Both draw exactly what they hold; nothing is held or smoothed;
+- the request is a command. Whether the car keeps requesting energy it cannot deliver — an empty
+  battery, the pit limiter engaged — is the car's behaviour, and the ring reports the request
+  either way. The charge percentage inside the glyph is the reading to trust for what is left.
 
 ## Throttle arc and recovery chip flicker around gear shifts: by design
 
@@ -53,6 +78,6 @@ The `replayGaps` diagnostic reports such holes during playback.
 ## Other open acceptance items
 
 Listed in COMPATIBILITY.md: a live Pro session on the 0.9.2 adapter (including AI cars and a new
-Pro recording), the battery glyph's first in-game look (digits over the fill, bolt, ring and halo
-at the user's scale), exact FA25 supplemental replay recording, mixed-camera behavior, no-DRS
-rendering and actual fonts/scales.
+Pro recording), the standard FA26's deployment request against its four maps and the speed
+thresholds above, exact FA25 supplemental replay recording, mixed-camera behaviour, no-DRS
+rendering and actual fonts at any scale.

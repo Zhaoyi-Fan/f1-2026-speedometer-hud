@@ -6,9 +6,9 @@ local FA25_ID = 'vrc_formula_alpha_2025_csp'
 local MAX_CARS, PRO_DIVISOR, NATIVE_DIVISOR = 22, 2, 1
 local STRATEGIES = { 'LOW', 'MEDIUM', 'HIGH', 'NODEPLOY' }
 local VALID_FIELDS = { 'soc', 'boost', 'strategy', 'strategyName', 'strat', 'recovering',
-  'drsPresent', 'drsAvailable', 'drsActive', 'smActive', 'smAvailable', 'wingF', 'wingR',
-  'esoc', 'kw', 'deploy', 'regen', 'regenLimit', 'cap', 'split', 'puMode', 'latch',
-  'otActive', 'otPending', 'charge', 'pl', 'plp', 'engineRunning', 'pitLimiter',
+  'deployInput', 'drsPresent', 'drsAvailable', 'drsActive', 'smActive', 'smAvailable',
+  'wingF', 'wingR', 'esoc', 'kw', 'deploy', 'regen', 'regenLimit', 'cap', 'split', 'puMode',
+  'latch', 'otActive', 'otPending', 'charge', 'pl', 'plp', 'engineRunning', 'pitLimiter',
   'speed', 'rpm', 'gear', 'gas', 'brake' }
 local BASIC_FIELDS = { speed = 'speedKmh', rpm = 'rpm', gear = 'gear', gas = 'gas', brake = 'brake' }
 local DRS_FIELDS = { 'drsPresent', 'drsAvailable', 'drsActive' }
@@ -21,7 +21,12 @@ local PRO_FLAG_MASKS = { otActive = 1, otPending = 2, boost = 4, charge = 8, pl 
 -- 2026-09-13. This establishes drag reduction, not independent Pro front/rear actuators.
 -- Recovery: observed battery rise under braking and positive SoC changes in sustained native
 -- kersCharging samples. It is a recovery status, not a guarantee of positive net battery flow.
-M.validation = { vanillaSM = true, vanillaRecovery = true, legacyReplayDRS = false }
+-- Deployment: the native ERS input (kersInput), the value this car's four delivery controllers
+-- produce from throttle and speed. It is a requested share of the car's deployment, never a
+-- measured power, and only values inside 0..1 are accepted. The diagnostics line reports it
+-- beside the battery level so live samples can be compared against the charge they consume.
+M.validation = { vanillaSM = true, vanillaRecovery = true, vanillaDeploy = true,
+  legacyReplayDRS = false }
 
 local function finite(v)
   return type(v) == 'number' and v == v and v > -math.huge and v < math.huge
@@ -96,6 +101,12 @@ local PRO_STREAM_FIELDS = { 'f26flags', 'f26soc', 'f26kw', 'f26deploy', 'f26rege
 local NATIVE_FIELDS = { 'f26n1owner', 'f26n1valid', 'f26n1state', 'f26n1soc', 'f26n1strategy' }
 local NATIVE_BITS = { soc = 1, boost = 2, strategy = 4, recovering = 8,
   drsPresent = 16, drsAvailable = 32, drsActive = 64 }
+-- 0.9.35 carries the native deployment share in the free high nibble of the strategy byte, and its
+-- own validity with it: 0 = nothing recorded, 1-15 = share x 14 + 1. The array layout, the slot
+-- count and every validity bit stay exactly as in schema 1, so recordings in both directions keep
+-- the fields a reader knows: earlier versions validate this byte as 0-3 and simply lose the
+-- strategy of a frame that carries a share, never the slot.
+local DEPLOY_STEPS = 14
 local NATIVE_STATE_BITS = { boost = 1, recovering = 2, drsPresent = 4,
   drsAvailable = 8, drsActive = 16 }
 -- v1 schema and exact-car family; low byte is car slot + 1. Other cars are never recorded.
@@ -212,6 +223,10 @@ function M.new(ac, sim, cfg)
         if S.supported.soc == true then
           put(S, 'soc', number(get(car, 'kersCharge'), 0, 1))
           if M.validation.vanillaRecovery then put(S, 'recovering', S.candidate.recovering) end
+          -- Deployment share requested by the car's delivery controller, not a measured power.
+          if M.validation.vanillaDeploy then
+            put(S, 'deployInput', number(get(car, 'kersInput'), 0, 1))
+          end
         end
         if S.supported.soc == true and S.supported.boost == true then
           put(S, 'boost', boolean(get(car, 'kersButtonPressed')))
@@ -332,6 +347,9 @@ function M.new(ac, sim, cfg)
     -- refresh must not publish a temporary empty slot while native APIs are being read.
     local soc = has(valid, NATIVE_BITS.soc) and quantize(S.soc * 250, 0, 250) or 0
     local strategy = has(valid, NATIVE_BITS.strategy) and S.strategy or 0
+    -- Only the native FA26 has a delivery controller; no other family writes this nibble.
+    local deploy = (S.kind == 'vanilla' and S.valid.deployInput == true)
+      and (quantize(S.deployInput * DEPLOY_STEPS, 0, DEPLOY_STEPS) + 1) or 0
     local previousValid = r.f26n1owner[i] == owner and r.f26n1valid[i] or 0
     local retainedValid = 0
     for _, mask in pairs(NATIVE_BITS) do
@@ -341,7 +359,7 @@ function M.new(ac, sim, cfg)
     -- The full-valid path keeps its valid mask throughout publication.
     if r.f26n1owner[i] ~= owner or retainedValid ~= previousValid then r.f26n1valid[i] = retainedValid end
     r.f26n1soc[i] = soc
-    r.f26n1strategy[i] = strategy
+    r.f26n1strategy[i] = strategy + deploy * 16
     r.f26n1state[i] = state
     r.f26n1valid[i] = valid
     r.f26n1owner[i] = owner
@@ -410,8 +428,9 @@ function M.new(ac, sim, cfg)
     local r = data.VRS
     local owner = ownerBase(S.carID)
     if not r or not owner or idx >= MAX_CARS or r.f26n1owner[idx] ~= owner + idx + 1 then return false end
-    local valid = integer(r.f26n1valid[idx], 0, 127)
-    local state = integer(r.f26n1state[idx], 0, 31)
+    -- Whole-byte ranges: a bit this version does not know is ignored, never a reason to drop a slot.
+    local valid = integer(r.f26n1valid[idx], 0, 255)
+    local state = integer(r.f26n1state[idx], 0, 255)
     if not valid or not state then return false end
     for field, mask in pairs(NATIVE_STATE_BITS) do
       if (S.kind == 'vanilla' or field == 'drsPresent' or field == 'drsAvailable' or field == 'drsActive')
@@ -422,11 +441,19 @@ function M.new(ac, sim, cfg)
       local soc = integer(r.f26n1soc[idx], 0, 250)
       put(S, 'soc', soc and soc / 250)
     end
-    if S.kind == 'vanilla' and has(valid, NATIVE_BITS.strategy) then
-      local strategy = integer(r.f26n1strategy[idx], 0, 3)
-      if strategy then
-        put(S, 'strategy', strategy); put(S, 'strat', strategy + 1)
-        put(S, 'strategyName', STRATEGIES[strategy + 1])
+    if S.kind == 'vanilla' then
+      -- One byte, two fields: the strategy index in bits 0-3, the deployment share in bits 4-7.
+      local packed = integer(r.f26n1strategy[idx], 0, 255)
+      local deploy = packed and math.floor(packed / 16)
+      if deploy and deploy > 0 and M.validation.vanillaDeploy then
+        put(S, 'deployInput', (deploy - 1) / DEPLOY_STEPS)
+      end
+      if packed and has(valid, NATIVE_BITS.strategy) then
+        local strategy = packed % 16
+        if strategy <= 3 then
+          put(S, 'strategy', strategy); put(S, 'strat', strategy + 1)
+          put(S, 'strategyName', STRATEGIES[strategy + 1])
+        end
       end
     end
     if S.kind == 'vanilla' then S.supported.soc, S.supported.boost = true, true end

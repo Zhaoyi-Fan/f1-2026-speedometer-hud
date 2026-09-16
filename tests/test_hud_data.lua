@@ -9,10 +9,13 @@ end
 local function equal(actual, expected, message)
   check(actual == expected, message .. ': ' .. tostring(actual) .. ' ~= ' .. tostring(expected))
 end
+-- The recorded deployment share: 14 steps, offset by one so code 0 means nothing was recorded.
+local function quantiseShare(v) return math.floor(v * 14 + 0.5) end
 check(D.validation.vanillaSM, 'SM evidence gate enabled after observed rear-wing action')
 check(D.validation.vanillaRecovery, 'recovery evidence gate enabled after battery/charging comparison')
+check(D.validation.vanillaDeploy, 'deployment evidence gate enabled for the native delivery input')
 -- Exercise the missing-evidence branch too; later scenarios enable it again.
-D.validation.vanillaSM, D.validation.vanillaRecovery = false, false
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = false, false, false
 local PRO, VAN, FA25 = 'vrc_formula_alpha_2026_csp', 'vrc_formula_alpha_2026', 'vrc_formula_alpha_2025_csp'
 local frames, ids, maps, channels, loads, sessions = {}, {}, {}, {}, {}, {}
 local sim = { carsCount = 1, isReplayActive = false, replayCurrentFrame = 0 }
@@ -119,6 +122,27 @@ equal(S.smAvailable, nil, 'unvalidated SM availability absent'); equal(S.recover
 equal(S.candidate.recovering, true, 'candidate recovery retained'); equal(S.wingF, nil, 'vanilla ignores H')
 equal(S.otActive, false, 'vanilla OT stays dark'); equal(S.supported.otActive, false, 'OT unsupported')
 equal(S.valid.otActive, false, 'unsupported OT is not historical false')
+equal(S.deployInput, nil, 'ungated deployment input absent')
+equal(S.valid.deployInput, false, 'ungated deployment input invalid')
+
+-- Native delivery input: a requested share, validated like every other native number.
+D.validation.vanillaDeploy = true
+data.readLive(S, 0); equal(S.deployInput, 1, 'native deployment input read')
+c.kersInput = 0.45; data.readLive(S, 0); equal(S.deployInput, 0.45, 'partial deployment share')
+c.kersInput = 0; data.readLive(S, 0)
+equal(S.deployInput, 0, 'a real zero share is kept'); equal(S.valid.deployInput, true, 'zero share is valid')
+c.kersInput = 1.5; data.readLive(S, 0); equal(S.valid.deployInput, false, 'share above one rejected')
+c.kersInput = -0.2; data.readLive(S, 0); equal(S.valid.deployInput, false, 'negative share rejected')
+c.kersInput = 0 / 0; data.readLive(S, 0); equal(S.valid.deployInput, false, 'NaN share rejected')
+c.kersInput = nil; data.readLive(S, 0); equal(S.deployInput, nil, 'missing share is not zero')
+c.kersInput = 0.45; c.kersPresent = false; data.readLive(S, 0)
+equal(S.valid.deployInput, false, 'no KERS, no deployment share')
+c.kersPresent = true; c.kersInput = 1
+c.physicsAvailable = false; data.readLive(S, 0)
+equal(S.deployInput, nil, 'remote physics exposes no deployment share')
+c.physicsAvailable = true
+D.validation.vanillaDeploy = false
+data.readLive(S, 0); equal(S.valid.deployInput, false, 'the gate closes the field again')
 c.kersCharge, c.kersButtonPressed, c.mgukDelivery = 0, true, 3
 data.readLive(S, 0)
 equal(S.soc, 0, 'real zero SoC retained'); equal(S.valid.soc, true, 'real zero SoC valid')
@@ -155,15 +179,55 @@ equal(data.recordAll(), 0, 'replay does not record')
 equal(data.VRS.f26n1owner[0], 0xA601, 'replay buffers never cleared by recordAll')
 
 -- A short future-validation scenario: typed manual/recovery/DRS values record independently.
-D.validation.vanillaSM, D.validation.vanillaRecovery = true, true
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = true, true, true
 sim.isReplayActive = false; c = car(0, VAN)
 c.kersButtonPressed, c.drsAvailable, c.drsActive, c.mgukDelivery = true, true, true, 3
+c.kersInput = 0.6
 data.recordAll(); local vanillaOn = cloneStream(data.VRS)
 sim.isReplayActive = true; c.drsActive, c.kersCharging = false, false
 data.readReplay(S, 0)
 equal(S.boost, true, 'recorded manual true'); equal(S.recovering, true, 'recorded recovery')
 equal(S.smActive, true, 'validated SM from record'); equal(S.smAvailable, true, 'validated SM available')
 equal(S.strategyName, 'NODEPLOY', 'recorded discrete strategy')
+
+-- One byte carries both: the strategy index in bits 0-3, the deployment share and its own
+-- validity in bits 4-7. Every schema-1 validity bit and the 132-byte layout stay untouched.
+equal(data.VRS.f26n1strategy[0], 3 + (quantiseShare(0.6) + 1) * 16, 'strategy and deployment share in one byte')
+equal(data.VRS.f26n1valid[0], 127, 'the share needs no validity bit of its own')
+equal(data.NATIVE_BYTES, 132, 'the share needs no extra stream byte')
+equal(S.deployInput, quantiseShare(0.6) / 14, 'recorded deployment share restored')
+sim.isReplayActive = false; c.kersInput = 1
+data.recordAll(); local vanillaFull = cloneStream(data.VRS)
+sim.isReplayActive = true
+data.readReplay(S, 0); equal(S.deployInput, 1, 'a full share survives quantisation')
+equal(S.strategyName, 'NODEPLOY', 'a full share leaves the strategy nibble intact')
+equal(data.VRS.f26n1strategy[0], 3 + 15 * 16, 'a full share is the highest code')
+sim.isReplayActive = false; c.kersInput = 0
+data.recordAll(); data.readReplay(S, 0)
+equal(S.deployInput, 0, 'a recorded zero share is a valid zero, not a missing field')
+equal(data.VRS.f26n1strategy[0], 3 + 16, 'a zero share is the lowest recorded code')
+c.kersInput = nil; data.recordAll()
+equal(data.VRS.f26n1strategy[0], 3, 'an unavailable share leaves the nibble empty')
+data.readReplay(S, 0); equal(S.deployInput, nil, 'an empty nibble reports no share')
+sim.isReplayActive = true
+restore(data.VRS, vanillaOn)
+D.validation.vanillaDeploy = false; data.readReplay(S, 0)
+equal(S.deployInput, nil, 'ungated playback drops the recorded share')
+equal(S.strategyName, 'NODEPLOY', 'the gate does not disturb the strategy in the same byte')
+D.validation.vanillaDeploy = true
+-- Recordings made before the nibble existed: no share, and their strategy still reads.
+data.VRS.f26n1strategy[0] = 3
+data.readReplay(S, 0)
+equal(S.deployInput, nil, 'an older recording reports no share')
+equal(S.strategyName, 'NODEPLOY', 'an older recording keeps its strategy')
+restore(data.VRS, vanillaOn); data.VRS.f26n1strategy[0] = 7 + 10 * 16
+data.readReplay(S, 0)
+equal(S.strategyName, nil, 'a strategy index outside the four-name contract is rejected')
+equal(S.deployInput, 9 / 14, 'the share survives an unusable strategy nibble')
+restore(data.VRS, vanillaFull); data.readReplay(S, 0)
+equal(S.deployInput, 1, 'restored full-share frame')
+restore(data.VRS, vanillaOn); data.readReplay(S, 0)
+c.kersInput = 0.6
 local onState = data.VRS.f26n1state[0]
 sim.replayCurrentFrame = 500; data.readReplay(S, 0); data.readReplay(S, 0)
 equal(data.VRS.f26n1state[0], onState, 'paused reads do not mutate stream')
@@ -171,21 +235,35 @@ restore(data.VRS, vanillaOff); sim.replayCurrentFrame = 20; data.readReplay(S, 0
 equal(S.boost, false, 'backward seek immediately reads earlier false'); equal(S.strategyName, 'LOW', 'seek strategy')
 equal(S.recovering, nil, 'missing bit does not reuse later recovery')
 restore(data.VRS, vanillaOn)
+local onStateBits = data.VRS.f26n1state[0]
 data.VRS.f26n1valid[0] = 2; data.readReplay(S, 0)
 equal(S.boost, true, 'partial valid button'); equal(S.soc, nil, 'partial invalid SoC')
 equal(S.strategyName, nil, 'partial invalid strategy'); equal(S.smActive, nil, 'partial invalid SM')
+equal(S.deployInput, 8 / 14, 'the share does not depend on the strategy validity bit')
+-- A recording from a later version: bits this version does not know are ignored, never a reason
+-- to drop the slot.
+data.VRS.f26n1valid[0] = 127 + 128; data.VRS.f26n1state[0] = onStateBits + 32
+data.readReplay(S, 0)
+equal(S.boost, true, 'an unknown validity bit does not discard the slot')
+equal(S.strategyName, 'NODEPLOY', 'an unknown state bit does not discard the slot')
+restore(data.VRS, vanillaOn); data.VRS.f26n1valid[0] = 2
 data.VRS.f26n1owner[0] = 0; data.readReplay(S, 0)
 equal(S.boost, nil, 'unrecorded frame clears button')
 restore(data.VRS, vanillaOn); data.VRS.f26n1owner[0] = 0xA602; data.readReplay(S, 0)
 equal(S.soc, nil, 'wrong slot association rejected')
 restore(data.VRS, vanillaOn); ids[0] = FA25; data.readReplay(S, 0)
 equal(S.drsActive, nil, 'wrong vehicle family association rejected'); equal(S.soc, nil, 'FA25 cannot read vanilla SoC')
-D.validation.vanillaSM, D.validation.vanillaRecovery = false, false
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = false, false, false
 
 -- Only exact FA25 receives the evidence-required minimal DRS supplement.
 sim.isReplayActive = false; c = car(0, FA25); c.drsActive, c.drsAvailable = true, true
 equal(data.recordAll(), 1, 'record exact FA25'); equal(data.recordedDRS, 1, 'FA25 count')
 equal(data.VRS.f26n1owner[0], 0xA501, 'FA25 car/slot association')
+D.validation.vanillaDeploy = true
+equal(data.recordAll(), 1, 'record exact FA25 with the deployment gate open')
+equal(data.VRS.f26n1strategy[0], 0, 'another family records neither strategy nor deployment share')
+check(data.VRS.f26n1valid[0] <= 127, 'the validity mask stays inside schema 1')
+D.validation.vanillaDeploy = false
 sim.isReplayActive = true; c.drsActive = false; data.readReplay(S, 0)
 equal(S.drsActive, true, 'new FA25 replay restored'); equal(S.soc, nil, 'FA25 never receives hybrid panel')
 data.VRS.f26n1owner[0] = 0; data.readReplay(S, 0)
@@ -264,7 +342,7 @@ acStub.getMGUKDeliveryName = function(_, p)
   if observeNativeRead then observeNativeRead() end
   return names[p + 1]
 end
-D.validation.vanillaSM, D.validation.vanillaRecovery = true, true
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = true, true, true
 local observed = D.new(acStub, sim, cfg)
 sim.carsCount = 2; c = car(0, VAN); car(1, FA25)
 equal(observed.recordAll(), 2, 'prime observed native buffers')
@@ -286,7 +364,7 @@ c.kersCharge, c.kersButtonPressed, c.mgukDelivery = 0.2, true, 3
 equal(observed.recordAll(), 2, 'publish valid native update')
 check(watchedWrites >= 5 and watchedReads > 0, 'observer actually sampled publication and native read')
 equal(observed.VRS.f26n1soc[0], 50, 'new SoC published instead of holding old sample')
-equal(observed.VRS.f26n1strategy[0], 3, 'new strategy published')
+equal(observed.VRS.f26n1strategy[0], 3 + 15 * 16, 'new strategy and full deployment share published')
 observeWrite, observeNativeRead = nil, nil
 
 local sawFamilyRevocation = false

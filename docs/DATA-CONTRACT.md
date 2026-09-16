@@ -1,7 +1,9 @@
 # Data contract
 
-This document describes version 0.10.0 (the in-dial battery glyph; the adapters, validity rules and
-replay streams are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract.
+This document describes version 0.9.35 (the standard FA26's native deployment request, added to the
+in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
+are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract. What each version changed is
+listed in [CHANGELOG.md](../CHANGELOG.md).
 Reference runtime: CSP build 4116. Actual validation and outstanding in-game checks are recorded
 in [COMPATIBILITY.md](COMPATIBILITY.md).
 
@@ -72,9 +74,17 @@ from the one decorative easing declared at the end of this section.
   halo alpha proportional to i². `mgukMaxPower` is never used, because it reads 0 or −350 during
   super-clipping live and is clamped to 0 in replays. Overtake, Charge mode, PL / PLP and the pit
   limiter never colour the ring; they remain chips in the panel.
-- **Native FA26**: red ring at a fixed intensity of 0.6 while `recovering` is valid and true (a
-  recovery status, not a measured power); never green, because deployment is not observable; the
-  button colours the body only.
+- **Native FA26**: green while `deployInput` is valid and above a 0.02 deadband, at that same value
+  as the intensity (magenta instead while the Boost command is valid and true); otherwise red at a
+  fixed intensity of 0.6 while `recovering` is valid and true. The deployment request is tested
+  first, because it is the input the car is acting on in this update, while recovery is a status it
+  can also hold off throttle; the two can only overlap at a trailing throttle. Neither intensity is
+  a power: the request is a share of the car's own full deployment and the recovery value is a
+  declared constant, so the two are separate scales and neither is comparable with `|kW| / 350`.
+  Without a valid request the ring falls back to the recovery rule alone, exactly as 0.9.3 drew it.
+  The button colours the body only. The live deadband (0.02) is finer than the recorded step (1/14),
+  so a request between the two lights the ring live and reads as zero in the replay of the same
+  frame; each side draws what it holds, and neither holds nor smooths anything.
 - **Unknown or invalid**: while `kw` is invalid (Pro live before the CAN map appears, replay slots
   without the app stream) the ring is idle white; while `soc` is invalid the glyph shows `--` with
   no fill and no bolt. Nothing is retained from the previous update. Conventional cars draw no glyph.
@@ -131,6 +141,7 @@ native H / I is used only when the Pro stream is absent, never on FA25 or native
 | --- | --- | --- |
 | Battery | `kersCharge`, range 0–1, with `kersPresent` | Percentage only; no Pro MJ conversion |
 | Manual BOOST | `kersButtonPressed`, with `kersHasButtonOverride` and `kersPresent` | Manual command; never inferred from `kersInput` or power |
+| Deployment request | `kersInput`, range 0–1, with `kersPresent` | The share of full deployment the selected map requests at the current throttle and speed. Colours the glyph ring green and sets its brightness. Never a kW measurement, never a BOOST substitute, and a value outside 0–1 is rejected rather than reinterpreted |
 | Deployment | `mgukDelivery`, `mgukDeliveryCount`, `ac.getMGUKDeliveryName(carIndex, programIndex)` | Native name; verified contract indices 0–3 = LOW / MEDIUM / HIGH / NODEPLOY |
 | Recovery | `kersCharging`, with `kersPresent` | Native recovery state, corroborated by live SoC increases; not net battery power or Pro Charge / Anti |
 | DRS capability | `drsPresent` | Known false forces available/active false during trusted live reading |
@@ -186,9 +197,17 @@ is the exact layout below. The Pro layout is never enlarged or reused for native
 | `f26n1valid` | uint8 | bit 0 SoC, 1 BOOST, 2 strategy, 3 recovery, 4 DRS present, 5 available, 6 active |
 | `f26n1state` | uint8 | bit 0 BOOST, 1 recovery, 2 DRS present, 3 available, 4 active |
 | `f26n1soc` | uint8 | SoC × 250, nearest integer, range 0–250; max error 0.2 percentage points |
-| `f26n1strategy` | uint8 | 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY |
+| `f26n1strategy` | uint8 | bits 0-3: 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY. bits 4-7 (0.9.35): 0 = no deployment request recorded, 1-15 = nearest integer of request × 14, plus 1, so the request carries its own validity and needs no bit in `f26n1valid`; steps of 1/14, max error 0.036 of the request, and a request below 0.036 records as zero |
 
-Each field is an array of length 22. The owner embeds the schema/car family and slot; playback
+Each field is an array of length 22. The 0.9.35 addition deliberately stays inside this layout: the
+slot count, the byte count, the divisor and every validity bit are those of schema 1, so recordings
+made before 0.9.35 restore field for field. A reader older than 0.9.35 validates the strategy byte as
+0-3 only, so any frame that carries a deployment request reads as an unavailable strategy there --
+in practice that is every recorded frame of a car whose request is readable -- while the state of
+charge, BOOST, recovery and DRS fields of the same slot still restore; readers from 0.9.35 on accept the whole byte range of `f26n1valid` and
+`f26n1state` and ignore bits they do not know, rather than discarding the slot.
+
+The owner embeds the schema/car family and slot; playback
 requires an exact expected owner for the selected car ID and index. A valid false or zero is
 authoritative; native defaults never overwrite it. Strategy is recorded only when the native
 API name matches the four-name contract. A different name can display live but is not silently

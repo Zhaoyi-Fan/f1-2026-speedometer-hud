@@ -2,7 +2,38 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
-## 0.10.0 — 2026-09-15
+## 0.9.35 — 2026-09-16
+
+Adds the standard FA26's own deployment to the 0.9.3 battery glyph. The FA26 Pro display, the Pro
+adapter and both replay-stream layouts are exactly those of 0.9.3.
+
+- The standard FA26 now shows when it is deploying. The glyph's ring turns green while the car's
+  delivery controller requests energy, with the brightness taken from that request (`kersInput`, the
+  share of full deployment the selected map asks for at the current throttle and speed), magenta
+  instead while the Boost button is held, and red at 0.9.3's fixed brightness while the car reports
+  recovery. Where 0.9.3 drew the ring red or idle only, it can now also be green.
+  - The request is a command, not a measured power. The green and the red are separate declared
+    scales: they cannot be compared with each other, nor with the Pro's `|kW| / 350`.
+  - A request of zero, the `NODEPLOY` map, very low speed and the top of the speed range leave the
+    ring without green; recovery still turns it red. That is the car behaving normally, not a
+    missing reading.
+  - The request follows the physics throttle, so it shows the same gearbox assists as the throttle
+    arc: the automatic-upshift cut interrupts it and the downshift auto-blip can raise it inside a
+    braking zone. Drawn as reported, like the arc ([known issues](docs/KNOWN-ISSUES.md)).
+- The compact standard-FA26 panel now has two chips, `Deploying` and `Recovering`, in the glyph's
+  green and red, where 0.9.3 had a single recovery chip. An unavailable state still reads `--`.
+- Replays record the request in four free bits of the byte that already carried the strategy index,
+  so the native stream keeps the 22 slots, 132 bytes, divisor and validity bits of 0.9.2's schema 1.
+  Recordings made before 0.9.35 restore exactly as they did. In the other direction, versions before
+  0.9.35 accept that byte only as a plain strategy index, so the strategy of a standard FA26 reads as
+  unavailable there; every other field of the same slot still restores.
+- `OT` remains dark on the standard FA26, which has no overtake channel; only the Pro reports one.
+- The periodic diagnostics line for the standard FA26 gains the request, the drawn glyph state and a
+  probe of the car's own native KERS properties.
+- A lap with the automatic gearbox answered an open question from 0.9.3: the Pro's power-driven ring
+  does not flicker at the upshift throttle cut, although the throttle arc still shows the cut itself.
+
+## 0.9.3 — 2026-09-15
 
 - Replaced the two side bars (usable battery on the left, lap harvest on the right) with a battery
   glyph inside the dial, in the slot of the former `BOOST` badge. The dial is 340 units wide for

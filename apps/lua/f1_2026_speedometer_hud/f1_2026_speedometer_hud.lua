@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.10.0'
+local VERSION = '0.9.35'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -18,15 +18,16 @@ local DIAL_W = 340
 local PANEL_GAP, PANEL_W = 12, 308
 local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
 
--- Battery glyph in the dial (design units, v0.10). It takes the 96 x 20 slot of the former BOOST pill at
+-- Battery glyph in the dial (design units, v0.9.3). It takes the 96 x 20 slot of the former BOOST pill at
 -- (122, 270), the one row whose clearance from the throttle / brake track start caps was verified in game
 -- (see drawDial). Terminal nub on the LEFT, charge fill anchored to the RIGHT wall: deploying moves the
 -- fill edge to the right and harvesting to the left, the same directions as the panel's MGU-K bar.
 -- The body colour follows the Boost button (the pill's own rule); the ring, nub and bolt follow the
--- MGU-K power of the current update.
+-- MGU-K flow of the current update: the Pro's signed power, or the standard car's recovery status
+-- and the deployment share its delivery controller requests.
 local BAT = { x = 122, y = 270, w = 96, h = 20, nubW = 4, nubH = 8, r = 5, inset = 2.5, ring = 2,
   halo = { 1.5, 3 }, haloA = { 0.30, 0.14 }, boltX = 6, boltY = 4, digits = 13, lowSoc = 0.10,
-  vanillaI = 0.6, smoothing = 0.12 }
+  vanillaI = 0.6, vanillaDeadband = 0.02, smoothing = 0.12 }
 local KW_DEADBAND = 5        -- |kW| at or below this is idle; also swallows the replay stream's 3 kW quantum
 -- lightning bolt, 8 x 12, as two convex quads sharing a diagonal (ui.pathFillConvex cannot fill a concave shape)
 -- (vertices clockwise on screen: ImGui's anti-aliased fill puts the fringe outside only for clockwise polygons)
@@ -85,6 +86,7 @@ local STR = {
   battery = { en = 'Battery', zh = '电池' },
   harvest = { en = 'harvest', zh = '回收' },
   recovering = { en = 'Recovering', zh = '正在回收' },
+  deploying = { en = 'Deploying', zh = '正在部署' },
   cap = { en = 'cap %s kW', zh = '上限 %s kW' },
   clip = { en = 'clip %s kW', zh = '强制回收 %s kW' },
   lapEnergy = { en = 'Lap energy', zh = '本圈能量' },
@@ -155,6 +157,9 @@ end
 
 local function fmtInt(v) return string.format('%d', math.floor((v or 0) + 0.5)) end
 
+-- Diagnostics only: keeps a missing or non-numeric native property out of string.format.
+local function numOr(v) return type(v) == 'number' and v or -1 end
+
 -- The displayed whole percentage, and the low-charge rule applied to that same figure, so '10%' is
 -- never drawn in two colours.
 local function socPercent(soc) return math.floor(soc * 100 + 0.5) end
@@ -175,8 +180,13 @@ end
 -- Returns the state ('harvest', 'deploy', 'boost' or 'idle') and the raw intensity 0..1 (nil when no flow is known).
 local function batteryFlow(S)
   if S.kind == 'vanilla' then
-    -- The native car reports no power: recovery is a status flag drawn at a declared fixed intensity, and
-    -- deployment is not observable, so the ring is never green here; the button only colours the body.
+    -- The native car reports no power. Deployment is the share its delivery controller requests
+    -- (`deployInput`, throttle x speed map), drawn like a Pro deployment but with the requested share
+    -- as the brightness; recovery is a status flag drawn at a declared fixed intensity. Deployment is
+    -- tested first: it is a live input, while recovery is a state the car can hold off throttle.
+    if valid(S, 'deployInput') and S.deployInput > BAT.vanillaDeadband then
+      return (valid(S, 'boost') and S.boost) and 'boost' or 'deploy', clamp(S.deployInput, 0, 1)
+    end
     if valid(S, 'recovering') and S.recovering then return 'harvest', BAT.vanillaI end
     return 'idle', nil
   end
@@ -379,13 +389,27 @@ local function runDiagnostics()
       diagFileAppend(l2)
     elseif view.kind == 'vanilla' or view.kind == 'drs' then
       local gaps = data.recordingGaps or {}
-      local l2 = string.format('%s native kind=%s soc=%s boost=%s strategy=%s recovering=%s drs=%s/%s/%s sm=%s/%s valid=%s/%s/%s/%s/%s nativeStream=%s recordedNative=%d/%d emptyNative=%d lastEmpty=%s:%s',
+      local batState, batRaw = batteryFlow(view)
+      -- Native KERS properties of the selected live car, so the shown deployment can be compared
+      -- with the car's own input, load and store contents in a single lap.
+      local probe = ''
+      if view.kind == 'vanilla' and not sim.isReplayActive and view.index then
+        local car = ac.getCar(view.index)
+        if car then
+          probe = string.format(' | probe kersInput=%.3f kersLoad=%.3f kJ=%.1f/%.1f charging=%s gas=%.2f speed=%.0f',
+            numOr(car.kersInput), numOr(car.kersLoad), numOr(car.kersCurrentKJ), numOr(car.kersMaxKJ),
+            tostring(car.kersCharging), numOr(car.gas), numOr(car.speedKmh))
+        end
+      end
+      local l2 = string.format('%s native kind=%s soc=%s boost=%s strategy=%s recovering=%s deploy=%s/%s drs=%s/%s/%s sm=%s/%s valid=%s/%s/%s/%s/%s nativeStream=%s recordedNative=%d/%d emptyNative=%d lastEmpty=%s:%s | bat=%s/%.2f%s',
         TAG, tostring(view.kind), tostring(view.soc), tostring(view.boost), tostring(view.strategyName),
-        tostring(view.recovering), tostring(view.drsPresent), tostring(view.drsAvailable), tostring(view.drsActive),
+        tostring(view.recovering), tostring(view.deployInput), tostring(valid(view, 'deployInput')),
+        tostring(view.drsPresent), tostring(view.drsAvailable), tostring(view.drsActive),
         tostring(view.smAvailable), tostring(view.smActive), tostring(valid(view, 'soc')), tostring(valid(view, 'boost')),
         tostring(valid(view, 'strategy')), tostring(valid(view, 'recovering')), tostring(valid(view, 'drsActive')),
         data.VRS and 'ok' or tostring(data.vrsErr), data.recordedVanilla or 0, data.recordedDRS or 0,
-        gaps.totalNativeEmpty or 0, tostring(gaps.lastNativeIndex or -1), tostring(gaps.lastNativeReason or 'none'))
+        gaps.totalNativeEmpty or 0, tostring(gaps.lastNativeIndex or -1), tostring(gaps.lastNativeReason or 'none'),
+        batState, batRaw or 0, probe)
       ac.log(l2)
       diagFileAppend(l2)
     end
@@ -534,7 +558,9 @@ end
 local BAT_HUE = { harvest = C.red, deploy = C.green, boost = C.boost }
 
 -- Every element is a function of the current snapshot: body = Boost button, fill length and digits = state of
--- charge, ring / nub / bolt hue = flow direction, ring brightness / width and halo = |kW| / 350 (optionally eased).
+-- charge, ring / nub / bolt hue = flow direction, ring brightness / width and halo = the intensity of that flow
+-- (Pro: |kW| / 350; standard car: the requested deployment share, or the declared fixed recovery value),
+-- optionally eased.
 local function drawBattery(S, ox, oy, s, fontB)
   local state, raw = batteryFlow(S)
   local hue = BAT_HUE[state]
@@ -555,7 +581,7 @@ local function drawBattery(S, ox, oy, s, fontB)
         rgbm(hue.r, hue.g, hue.b, i * i * BAT.haloA[k]), (BAT.r + BAT.halo[k]) * s, ui.CornerFlags.All, 2 * s)
     end
   end
-  -- Both adapters expose only the manual command, never automatic deployment or estimated power.
+  -- The body follows the manual command of both adapters; automatic deployment never colours it.
   local boostOn = valid(S, 'boost') and S.boost
   ui.drawRectFilled(p1, p2, boostOn and C.boost or C.track, BAT.r * s, ui.CornerFlags.All)
   local socOk = valid(S, 'soc')
@@ -631,7 +657,8 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
     if cfg.showBattery then
       drawBattery(S, ox, oy, s, fontB)   -- the glyph's body carries the Boost button, its ring the energy flow
     else
-      -- Both adapters expose only the manual command, never automatic deployment or estimated power.
+      -- The badge is the manual command of both adapters; in this mode there is no ring, so
+      -- automatic deployment and recovery are not shown at all.
       local boostOn = valid(S, 'boost') and S.boost
       pill(fontB, ox + 122 * s, oy + 270 * s, 96 * s, 20 * s, boostOn and C.boost or C.track, nil,
         'BOOST', 13 * s, boostOn and C.white or C.dim, 6 * s)
@@ -771,9 +798,16 @@ local function drawVanillaPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   if soc and soc > 0.002 then ui.drawRectFilled(vec2(lx, by), vec2(lx + cw * soc, by + bh), low and C.yellow or C.batFill, 3 * s) end
   text(fontLR, L('strategy'), 12 * s, lx, py + 72 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
   text(fontB, valid(S, 'strategy') and S.strategyName or '--', 20 * s, lx, py + 91 * s, cw, 28 * s, C.white, ui.Alignment.Start)
+  -- The two flow states the native car reports, in the dial glyph's colours: the deployment share
+  -- its delivery controller requests, and its recovery status.
+  local deployKnown = valid(S, 'deployInput')
+  local deploying = deployKnown and S.deployInput > BAT.vanillaDeadband
+  local cellW = (cw - 12 * s) * 0.5
+  chip(fontLB, lx, py + 144 * s, cellW, 28 * s, deploying, C.green,
+    deployKnown and L('deploying') or (L('deploying') .. ' --'), s)
   local recoveryKnown = valid(S, 'recovering')
   local recovering = recoveryKnown and S.recovering
-  chip(fontLB, lx, py + 144 * s, cw, 28 * s, recovering, C.red,   -- same red as the dial's harvest ring
+  chip(fontLB, lx + cellW + 12 * s, py + 144 * s, cellW, 28 * s, recovering, C.red,   -- same red as the dial's harvest ring
     recoveryKnown and L('recovering') or (L('recovering') .. ' --'), s)
   if cfg.diagnostics then
     text(fontR, tostring(S.source), 10 * s, lx, py + 185 * s, cw, 16 * s, C.dim, ui.Alignment.Start)
