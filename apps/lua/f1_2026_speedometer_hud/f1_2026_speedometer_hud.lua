@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.35'
+local VERSION = '0.9.36'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -26,8 +26,8 @@ local REPLAY_DIVISOR = 2     -- record every 2nd replay frame
 -- MGU-K flow of the current update: the Pro's signed power, or the standard car's recovery status
 -- and the deployment share its delivery controller requests.
 local BAT = { x = 122, y = 270, w = 96, h = 20, nubW = 4, nubH = 8, r = 5, inset = 2.5, ring = 2,
-  halo = { 1.5, 3 }, haloA = { 0.30, 0.14 }, boltX = 6, boltY = 4, digits = 13, lowSoc = 0.10,
-  vanillaI = 0.6, vanillaDeadband = 0.02, smoothing = 0.12 }
+  halo = { 1.5, 3 }, haloA = { 0.30, 0.14 }, boltX = 6, boltY = 4, boltW = 8, digits = 13,
+  lowSoc = 0.10, boostSoc = 9, vanillaI = 0.6, vanillaDeadband = 0.02, smoothing = 0.12 }
 local KW_DEADBAND = 5        -- |kW| at or below this is idle; also swallows the replay stream's 3 kW quantum
 -- lightning bolt, 8 x 12, as two convex quads sharing a diagonal (ui.pathFillConvex cannot fill a concave shape)
 -- (vertices clockwise on screen: ImGui's anti-aliased fill puts the fringe outside only for clockwise polygons)
@@ -557,8 +557,9 @@ end
 
 local BAT_HUE = { harvest = C.red, deploy = C.green, boost = C.boost }
 
--- Every element is a function of the current snapshot: body = Boost button, fill length and digits = state of
--- charge, ring / nub / bolt hue = flow direction, ring brightness / width and halo = the intensity of that flow
+-- Every element is a function of the current snapshot: body = Boost button (and the word BOOST inside it while
+-- it is held), fill length and digits = state of charge, ring / nub / bolt hue = flow direction, ring
+-- brightness / width and halo = the intensity of that flow
 -- (Pro: |kW| / 350; standard car: the requested deployment share, or the declared fixed recovery value),
 -- optionally eased.
 local function drawBattery(S, ox, oy, s, fontB)
@@ -603,11 +604,27 @@ local function drawBattery(S, ox, oy, s, fontB)
   ui.drawRect(p1, p2, ringCol, BAT.r * s, ui.CornerFlags.All, (BAT.ring + i) * s)
   local ny = y0 + (BAT.h - BAT.nubH) * 0.5 * s
   ui.drawRectFilled(vec2(ox + BAT.x * s, ny), vec2(x0, ny + BAT.nubH * s), hue and ringCol or C.batBolt, 1.5 * s, ui.CornerFlags.Left)
+  -- While the Boost command is held the body reads BOOST, exactly as the badge this glyph replaced;
+  -- the fill still shows the level. The number returns beside the word once the displayed charge is
+  -- down to a single digit, where it is the reading that matters, and is then always the amber one.
   local dx, dw = x0 + 16 * s, w - 20 * s
-  if socOk then
-    textOutlined(fontB, socPercent(soc) .. '%', BAT.digits * s, dx, y0, dw, h, low and C.yellow or C.white, s, ui.Alignment.End)
-  else
+  local digits = socOk and (socPercent(soc) .. '%') or nil
+  local digitsWithBoost = digits ~= nil and socPercent(soc) <= BAT.boostSoc
+  if digits and (not boostOn or digitsWithBoost) then
+    textOutlined(fontB, digits, BAT.digits * s, dx, y0, dw, h, low and C.yellow or C.white, s, ui.Alignment.End)
+  elseif not socOk and not boostOn then
     text(fontB, '--', BAT.digits * s, dx, y0, dw, h, C.dim, ui.Alignment.End)
+  end
+  if boostOn then
+    local wx, ww = x0, w                      -- centred on the body, the badge's own placement
+    if digitsWithBoost then
+      ui.pushDWriteFont(fontB)
+      local numberW = ui.measureDWriteText(digits, BAT.digits * s).x
+      ui.popDWriteFont()
+      wx = x0 + (BAT.boltX + BAT.boltW) * s    -- between the bolt and the number it now shares with
+      ww = x0 + w - 4 * s - numberW - wx
+    end
+    textOutlined(fontB, 'BOOST', BAT.digits * s, wx, y0, ww, h, C.white, s)
   end
 end
 

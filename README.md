@@ -5,10 +5,11 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.35** gives the standard FA26 its own deployment indication on the battery glyph that
-**0.9.3** introduced in place of the two side bars; the Pro display and adapter are those of 0.9.3,
-the standard car's compact panel gains a second chip, and both replay-stream layouts are unchanged
-from 0.9.2. The [changelog](CHANGELOG.md) lists what each version changed. See
+Version **0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
+standard FA26 its own deployment indication on the battery glyph that
+**0.9.3** introduced in place of the two side bars; the word appears on both cars, the Pro adapter is
+that of 0.9.3, the standard car's compact panel gains a second chip, and both replay-stream layouts
+are unchanged from 0.9.2. The [changelog](CHANGELOG.md) lists what each version changed. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
 is still pending.
 The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
@@ -48,7 +49,7 @@ For **FA26 Pro**, three indicators show the 2026 systems:
 | --- | --- | --- |
 | `SM` Straight Mode | not available | white = available, press to pre-latch · blue = pre-latched, engages at the zone · yellow = available but already inside the zone · green = wings in Straight Mode position |
 | `OT` Overtake | not available | white outline = granted, waiting for the activation line · green = active this lap |
-| Battery glyph | `--` with an idle ring | body magenta while the Boost button is held / toggled · ring and terminal red while harvesting, green while deploying, magenta while Boost deploys, brighter with more power · bolt in the same hue, white on the magenta body · fill and digits amber when the figure is 10 % or less |
+| Battery glyph | `--` with an idle ring | body magenta and reading `BOOST` while the Boost button is held / toggled · ring and terminal red while harvesting, green while deploying, magenta while Boost deploys, brighter with more power · bolt in the same hue, white on the magenta body · fill and digits amber when the figure is 10 % or less |
 
 **Battery glyph:** the usable charge as a fill with the percentage inside, in the slot below `SM` / `OT`.
 The terminal is on the left and the fill is anchored to the right, so deploying moves the fill edge to
@@ -57,8 +58,10 @@ around it shows the MGU-K flow of the current update, with brightness, width and
 following the power on the Pro and the deployment request on the standard FA26. Nothing animates on
 its own apart from the optional 120 ms brightness easing
 (on by default; the state and hue are never eased). The body carries the Boost button exactly as the
-former `BOOST` badge did, so Boost held into a braking zone reads as a magenta body with a red ring.
-Switching the glyph off in settings brings the `BOOST` badge back.
+former `BOOST` badge did, so Boost held into a braking zone reads as a magenta body with a red ring,
+and while the command is held the body reads `BOOST` in place of the percentage — the fill still
+shows the level, and once the charge is down to a single digit the amber number returns beside the
+word. Switching the glyph off in settings brings the `BOOST` badge back.
 
 **Pro energy panel:** can be shown or hidden in settings or with a bound key or wheel button.
 
@@ -89,7 +92,7 @@ No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigne
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.35 dial state illustrations](docs/dial-states.png)
+![v0.9.36 dial state illustrations](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -121,8 +124,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.35.zip` from the
-[v0.9.35 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.35)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.36.zip` from the
+[v0.9.36 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.36)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -130,7 +133,7 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.35**. The dial no longer has side
+replay and check that the settings window shows version **0.9.36**. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.

@@ -1,8 +1,9 @@
-# Compatibility and validation — version 0.9.35
+# Compatibility and validation — version 0.9.36
 
 Updated 2026-09-16. Runtime reference: CSP build 4116. Version 0.9.3 replaced the side bars with a
 battery glyph inside the dial; version 0.9.35 reads one further native field on the standard FA26,
-its deployment request, and gives that car's panel a second chip. The Pro adapter, the validity rules and both replay-stream layouts are those of
+its deployment request, and gives that car's panel a second chip; version 0.9.36 writes the word BOOST
+inside the glyph while that command is held. The Pro adapter, the validity rules and both replay-stream layouts are those of
 0.9.2, so the checks below still apply to them; the standard-FA26 rows carry their own new pending
 item, because the samples behind them predate that field. The 0.9.1 ZIP is the earlier Pro-only
 build.
@@ -23,7 +24,7 @@ build.
 | Other conventional cars | Native live DRS; no supplemental recording | Generic adapter tests | Native replay reliability, per car |
 | Cars without DRS | Same DRS label, always dark | Known-absent and conflicting-input tests | A game screenshot |
 | Mixed camera, pause, reverse seek, missing data | The current snapshot is rebuilt every update; no previous-car or future-value cache | Synthetic routing and state tests | Mixed-grid acceptance |
-| Battery glyph, Pro and standard FA26 | Body = Boost button; ring and terminal = the flow of the current update (red harvest, green deploy, magenta Boost); bolt = the same hue, white on the magenta Boost body; fill anchored to the right wall, amber when the displayed figure is 10 % or less; `--` without fill or bolt when the charge is invalid. Brightness comes from `|kW| / 350` on the Pro, and on the standard FA26 from the deployment request, or a fixed value while it reports recovery | Offline UI checks of every state, the 5 kW deadband and the request deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, the native deploy / Boost / recovery precedence, and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates). A lap with the automatic gearbox showed no flicker of the Pro's ring at the upshift throttle cut | A Pro session with harvesting, deploying, Boost and super-clipping; readability of the digits, bolt and ring at any scale |
+| Battery glyph, Pro and standard FA26 | Body = Boost button, reading `BOOST` while it is held (the single-digit charge returns beside the word); ring and terminal = the flow of the current update (red harvest, green deploy, magenta Boost); bolt = the same hue, white on the magenta Boost body; fill anchored to the right wall, amber when the displayed figure is 10 % or less; `--` without fill or bolt when the charge is invalid. Brightness comes from `|kW| / 350` on the Pro, and on the standard FA26 from the deployment request, or a fixed value while it reports recovery | Offline UI checks of every state, the 5 kW deadband and the request deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, the native deploy / Boost / recovery precedence, the `BOOST` word with and without the single-digit number, and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates). A lap with the automatic gearbox showed no flicker of the Pro's ring at the upshift throttle cut | A Pro session with harvesting, deploying, Boost and super-clipping; readability of the digits, bolt and ring at any scale |
 | Chinese / English, scale, panel and glyph | Pro dial and panel, compact standard-FA26 panel, plain dial for other cars; the `BOOST` badge returns when the glyph is off | 72 UI combinations and drawing bounds | Actual font rendering at each scale |
 
 ## What the standard-FA26 evidence means
@@ -54,7 +55,7 @@ backups and machine logs are excluded from the repository.
   recording off, replay write protection, camera changes and range limits, and the deployment
   request's validation, evidence gate, round trip through the shared strategy byte and both
   cross-version directions.
-- UI tests (5,686 checks): execute the real main Lua with a stub data adapter and a drawing
+- UI tests (5,769 checks): execute the real main Lua with a stub data adapter and a drawing
   recorder. They validate content, geometry, scale and language combinations, partial Pro data
   and the canvas origin, the battery glyph's states (harvest / deploy / Boost / idle / unknown /
   invalid, the Boost body, the right-anchored fill, the amber low-charge rule, the native car's

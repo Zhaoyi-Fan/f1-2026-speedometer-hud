@@ -217,6 +217,9 @@ end
 local function batteryBody(scale) scale = scale or 1; return boxAt('rect', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
 local function batteryRing(scale) scale = scale or 1; return boxAt('border', 126 * scale, 270 * scale, 92 * scale, 20 * scale) end
 local function batteryDigits(value, scale) scale = scale or 1; return findTextAt(value, 142 * scale, 270 * scale) end
+-- The word BOOST is centred on the body, so its text box is the body itself; the badge is the wider pill.
+local function batteryWord(scale) scale = scale or 1; return findTextAt('BOOST', 126 * scale, 270 * scale) end
+local function boostBadge(scale) scale = scale or 1; return boxAt('rect', 122 * scale, 270 * scale, 96 * scale, 20 * scale) end
 local function sameHue(a, b) return a and b and near(a.r, b.r) and near(a.g, b.g) and near(a.b, b.b) end
 for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
   for _, lang in ipairs({ 'en', 'zh' }) do
@@ -248,8 +251,11 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
           else
             check(findText('SM') and findText('OT') and not findText('DRS'), '2026 badge cluster retained')
             if showBattery then
-              check(not findText('BOOST') and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge')
-              check(batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'battery digits sit inside the glyph')
+              check(not boostBadge(scale) and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge')
+              -- both fixtures hold the Boost command, so the body reads BOOST instead of the charge
+              check(batteryWord(scale) and not batteryDigits(kind == 'pro' and '75%' or '50%', scale), 'the held Boost command reads BOOST inside the glyph')
+              check(near(batteryWord(scale).w, 92 * scale) and near(batteryWord(scale).size, 13 * scale)
+                and batteryWord(scale).horizontal == ui.Alignment.Center, 'the word is centred on the whole body at every scale')
               check(colorEquals(batteryBody(scale).color, boostColor) and quads() == 4, 'Boost button colours the battery body; bolt drawn')
             else
               check(findText('BOOST') and not batteryBody(scale) and quads() == 0, 'BOOST badge returns when the glyph is off')
@@ -299,6 +305,7 @@ snapshots[1].valid = { recovering = true }
 render()
 check(not findText('87%') and not findText('HIGH'), 'raw values with invalid fields never become valid readouts')
 check(colorEquals(matchingFill(findText('SM')), dark) and colorEquals(batteryBody().color, dark), 'raw true states cannot illuminate without validity')
+check(not findText('BOOST'), 'an unverified Boost flag never prints the word either')
 
 -- Battery glyph: state and hue from the current update, body from the Boost button, fill anchored to the
 -- right wall, easing of the ring brightness only.
@@ -353,6 +360,45 @@ check(batteryDigits('10%') and colorEquals(batteryDigits('10%').color, yellow) a
 snapshots[1].soc = 0.105
 render()
 check(batteryDigits('11%') and colorEquals(batteryDigits('11%').color, rgbm(1, 1, 1, 1)) and colorEquals(batteryFill().color, batteryColor), '11% is drawn in the normal colours')
+
+-- The word BOOST inside the body while the command is held, and the single-digit exception.
+snapshots[1].soc, snapshots[1].boost = 0.75, true
+render()
+check(batteryWord() and not batteryDigits('75%'), 'the held Boost command replaces the charge with BOOST')
+check(colorEquals(batteryWord().color, rgbm(1, 1, 1, 1)) and near(batteryWord().w, 92), 'the word is white and centred on the body')
+check(batteryFill() and near(batteryFill().x + batteryFill().w, 215.5) and near(batteryFill().w, 87 * 0.75),
+  'the charge fill still reads the level behind the word')
+snapshots[1].boost = false
+render()
+check(batteryDigits('75%') and not batteryWord(), 'releasing Boost brings the charge straight back')
+snapshots[1].soc, snapshots[1].boost = 0.104, true
+render()
+check(batteryWord() and not batteryDigits('10%'), 'a two-figure charge stays hidden while Boost is held')
+snapshots[1].soc = 0.094
+render()
+-- the word must clear the bolt (which ends at 140) and stop before the number (right-aligned to 214);
+-- findTextAt matches the drawn text itself, not the four outline copies around it
+local boostWord = findTextAt('BOOST', 140, 270)
+check(boostWord and batteryDigits('9%'), 'a single-digit charge is shown beside BOOST')
+check(colorEquals(batteryDigits('9%').color, yellow), 'that number keeps the amber low-charge colour')
+local numberWidth = 2 * 13 * 0.55
+check(boostWord.x + boostWord.w <= 214 - numberWidth + 0.001, 'the word stops before the number')
+check(not batteryWord(), 'and is no longer centred on the body')
+check(colorEquals(boostWord.color, rgbm(1, 1, 1, 1)) and near(boostWord.size, 13) and boostWord.horizontal == ui.Alignment.Center,
+  'the word beside the number is the same centred white body text')
+check(boostWord.w >= ui.measureDWriteText('BOOST', 13).x, 'the word still has room between the bolt and the number')
+cfg.scale = 2.5
+render()
+local scaledWord = findTextAt('BOOST', 140 * 2.5, 270 * 2.5)
+check(scaledWord and near(scaledWord.w, boostWord.w * 2.5) and batteryDigits('9%', 2.5), 'the single-digit layout scales with the HUD')
+cfg.scale = 1
+render()
+snapshots[1].valid.soc = false
+render()
+check(batteryWord() and not batteryDigits('--'), 'an unknown charge under Boost still reads BOOST, never --')
+snapshots[1].valid.soc, snapshots[1].soc, snapshots[1].boost = true, 0.75, false
+render()
+check(batteryDigits('75%') and not findText('BOOST'), 'without the command neither the word nor the badge is drawn')
 snapshots[1] = fixture('vanilla')                                -- recovering true, boost true, no deployment
 render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'native recovery: red ring at the declared fixed intensity')

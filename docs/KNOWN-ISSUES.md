@@ -1,7 +1,7 @@
-# Known issues — version 0.9.35
+# Known issues — version 0.9.36
 
-Updated 2026-09-16 for version 0.9.35 (the standard FA26's deployment request, on 0.9.3's in-dial
-battery glyph; replay-stream layouts as in 0.9.2).
+Updated 2026-09-16 for version 0.9.36 (the word BOOST inside the glyph, on 0.9.35's standard-FA26
+deployment request and 0.9.3's in-dial battery glyph; replay-stream layouts as in 0.9.2).
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validation scope.
 
 ## Battery ring around automatic upshifts: sampled, no flicker

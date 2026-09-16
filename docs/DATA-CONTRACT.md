@@ -1,7 +1,7 @@
 # Data contract
 
-This document describes version 0.9.35 (the standard FA26's native deployment request, added to the
-in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
+This document describes version 0.9.36 (the word BOOST inside the glyph while the command is held,
+on top of 0.9.35's standard-FA26 deployment request and the in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
 are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract. What each version changed is
 listed in [CHANGELOG.md](../CHANGELOG.md).
 Reference runtime: CSP build 4116. Actual validation and outstanding in-game checks are recorded
@@ -62,7 +62,11 @@ from the one decorative easing declared at the end of this section.
 
 - **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
   is anchored to the right wall, so deploying moves its edge to the right and harvesting to the
-  left. At or below 10 % the fill and digits turn amber; red is never used for a level.
+  left. At or below 10 % the fill and digits turn amber; red is never used for a level. While the
+  Boost command is held the percentage gives way to the word `BOOST` (the badge's own placement,
+  centred on the body), and an unknown charge then reads `BOOST` rather than `--`; at or below 9 %
+  the number returns beside the word, still amber, and the word moves between the bolt and it. The
+  fill is drawn in every case, so the level is always readable as a length.
 - **Body**: magenta while the manual Boost command is valid and true (`isHybridBoostActive` on the
   Pro, `kersButtonPressed` on the native FA26), otherwise the track colour. This is the former
   `BOOST` badge's rule; the badge itself returns when the glyph is switched off. On a magenta body

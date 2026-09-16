@@ -2,6 +2,21 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
+## 0.9.36 — 2026-09-16
+
+Brings the word `BOOST` back, inside the glyph. Everything else, including the adapters and both
+replay streams, is exactly as in 0.9.35.
+
+- While the Boost command is held, the battery glyph writes `BOOST` across its body in place of the
+  charge percentage, as the badge it replaced did. The magenta body, the ring, the terminal and the
+  bolt are unchanged, and the fill still shows the level, so the charge remains readable as a length
+  while the word is up.
+- One exception: once the displayed charge is down to a single digit, the number comes back beside
+  the word, in its amber low-charge colour, because that is the reading that matters while the car
+  asks for maximum deployment. The word then sits between the bolt and the number.
+- An unknown charge under Boost reads `BOOST` rather than `--`.
+- Releasing the command restores the percentage in the same update; nothing is held or faded.
+
 ## 0.9.35 — 2026-09-16
 
 Adds the standard FA26's own deployment to the 0.9.3 battery glyph. The FA26 Pro display, the Pro
