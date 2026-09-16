@@ -6,7 +6,7 @@
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.36'
+local VERSION = '0.9.37'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -372,9 +372,11 @@ local function runDiagnostics()
     if sim.isReplayActive then canState = 'n/a (replay)'
     elseif can.inputs then canState = string.format('ok (%d ch)', can.count)
     else canState = 'none: ' .. tostring(can.err) end
-    local l1 = string.format('%s src=%s | car=%s (%s) | CAN=%s | session=%s replay=%s stream=%s recorded=%d | replayGaps=%d@%s | %s | %s',
+    local gaps = data.recordingGaps or {}
+    local l1 = string.format('%s src=%s | car=%s (%s) | CAN=%s | session=%s replay=%s stream=%s recorded=%d proSkip=%d:%s@%s | replayGaps=%d@%s | %s | %s',
       TAG, tostring(view.source), tostring(view.index), tostring(view.name), canState,
       tostring(sim.raceSessionType), tostring(sim.isReplayActive), RS and 'ok' or ('ERR ' .. tostring(rsErr)), recordedCars,
+      gaps.totalProEmpty or 0, tostring(gaps.lastProReason or 'none'), tostring(gaps.lastProIndex or -1),
       replayGaps.count, tostring(replayGaps.lastFrame), diag.aiProbe, diag.nativeSocReplay)
     ac.log(l1)
     diagFileAppend(l1)
@@ -388,7 +390,6 @@ local function runDiagnostics()
       ac.log(l2)
       diagFileAppend(l2)
     elseif view.kind == 'vanilla' or view.kind == 'drs' then
-      local gaps = data.recordingGaps or {}
       local batState, batRaw = batteryFlow(view)
       -- Native KERS properties of the selected live car, so the shown deployment can be compared
       -- with the car's own input, load and store contents in a single lap.

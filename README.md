@@ -5,7 +5,9 @@
 A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
 appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
 
-Version **0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
+Version **0.9.37** fixes a recording defect: Pro replays recorded since 0.9.2 had no energy data at
+all in the frames where Straight Mode was engaged. **0.9.36** writes `BOOST` inside the glyph while
+that command is held. **0.9.35** gave the
 standard FA26 its own deployment indication on the battery glyph that
 **0.9.3** introduced in place of the two side bars; the word appears on both cars, the Pro adapter is
 that of 0.9.3, the standard car's compact panel gains a second chip, and both replay-stream layouts
@@ -92,7 +94,7 @@ No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigne
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
-![v0.9.36 dial state illustrations](docs/dial-states.png)
+![v0.9.37 dial state illustrations](docs/dial-states.png)
 
 ## 2026 regulations
 
@@ -124,8 +126,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.36.zip` from the
-[v0.9.36 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.36)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.37.zip` from the
+[v0.9.37 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.37)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -133,7 +135,7 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.36**. The dial no longer has side
+replay and check that the settings window shows version **0.9.37**. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
 98 units wider for the Pro and 62 for the standard FA26) and the energy panel sits closer to the
 dial; drag the window once if it lands somewhere new.
@@ -180,6 +182,8 @@ When that data is present, the HUD can show the recorded energy readings in save
 replays. Other users with the app installed can also view the data in a shared replay.
 
 Old Pro replays retain the original stream reader and the Pro-only native H / I wing fallback.
+Replays recorded by versions 0.9.2 to 0.9.36 hold no energy data in the frames where Straight Mode was
+engaged; 0.9.37 records those frames again, but existing files cannot be repaired.
 Old native FA26 samples did not restore battery, manual BOOST or deployment changes; absent
 valid app recording, these remain unknown. The tested FA25 old replays also did not restore
 native `drsActive`, so their DRS indicator stays dark without claiming a known closed wing.

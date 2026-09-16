@@ -1,7 +1,18 @@
-# Known issues — version 0.9.36
+# Known issues — version 0.9.37
 
-Updated 2026-09-16 for version 0.9.36 (the word BOOST inside the glyph, on 0.9.35's standard-FA26
-deployment request and 0.9.3's in-dial battery glyph; replay-stream layouts as in 0.9.2).
+Updated 2026-09-16 for version 0.9.37 (the Straight Mode latch fix, on 0.9.36's word BOOST, 0.9.35's
+standard-FA26 deployment request and 0.9.3's in-dial battery glyph; replay-stream layouts as in 0.9.2).
+
+## Pro replays recorded between 0.9.2 and 0.9.36 lose their Straight Mode stretches
+
+**Fixed in 0.9.37 for new recordings; existing files cannot be repaired.** The latch channel reports 4
+while Straight Mode is engaged. From 0.9.2 the reader accepted only 0-3, and the latch is one of the
+fields the original stream requires before it writes a frame, so those frames were never written: in
+playback the whole energy readout falls back to `--` for as long as the mode was open, which on a fast
+circuit is most of every straight. The live display was never affected, because it does not need the
+frame to be complete. Recordings made before 0.9.2 are also complete, because that writer clamped the
+value to 3 instead of rejecting it — those files show the engaged state as `available inside the zone`,
+while 0.9.37 records it as itself.
 See [COMPATIBILITY.md](COMPATIBILITY.md) for validation scope.
 
 ## Battery ring around automatic upshifts: sampled, no flicker

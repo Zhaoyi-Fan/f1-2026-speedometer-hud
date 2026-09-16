@@ -1,6 +1,7 @@
 # Data contract
 
-This document describes version 0.9.36 (the word BOOST inside the glyph while the command is held,
+This document describes version 0.9.37 (the Straight Mode latch's engaged state in the Pro stream,
+on top of 0.9.36's word BOOST inside the glyph while the command is held,
 on top of 0.9.35's standard-FA26 deployment request and the in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
 are unchanged from 0.9.2) and the immutable v0.9.1 Pro replay contract. What each version changed is
 listed in [CHANGELOG.md](../CHANGELOG.md).
@@ -124,7 +125,7 @@ Channels used:
 | `isHybridBoostActive` | Boost button | manual max-deployment override |
 | `isHybridAntiActive` | Charge mode | |
 | `isPowerLimited`, `isPowerLimitedPending` | PL / PLP states | regulation constraints on power changes |
-| `drsLatch` | Straight Mode latch | 1 available (white LEDs), 2 pre-latched (blue), 3 available inside the zone (yellow) |
+| `drsLatch` | Straight Mode latch | 0 off, 1 available (white LEDs), 2 pre-latched (blue), 3 available inside the zone (yellow), 4 engaged. Values 0-7 are accepted and recorded; before 0.9.37 the reader accepted only 0-3, so every frame with the mode engaged was dropped from the replay |
 | `drsMode` | Straight Mode active | |
 | `isEngineRunning`, `isPitLimiterActive` | | |
 
@@ -178,7 +179,7 @@ replay compatibility.
 | `f26deploy`, `f26regen`, `f26regenLimit` | uint8 | MJ × 20 |
 | `f26esoc` | uint8 | MJ × 10 |
 | `f26cap` | uint8 | kW / 2 |
-| `f26flags` | uint16 | bit 0 OT active, 1 OT pending, 2 boost, 3 charge, 4 PL, 5 PLP, 6-7 SM latch, 8 SM active, 9 wing F, 10 wing R, 11 engine running, 12 pit limiter, 15 slot recorded |
+| `f26flags` | uint16 | bit 0 OT active, 1 OT pending, 2 boost, 3 charge, 4 PL, 5 PLP, 6-7 SM latch bits 0-1, 8 SM active, 9 wing F, 10 wing R, 11 engine running, 12 pit limiter, 13 SM latch bit 2 (0.9.37), 15 slot recorded |
 | `f26pack` | uint16 | bits 0-3 STRAT − 1, 4-8 split, 9-12 PU mode |
 
 If bit 15 is unset, the slot is missing. The old stream has no per-field validity bitmap, so

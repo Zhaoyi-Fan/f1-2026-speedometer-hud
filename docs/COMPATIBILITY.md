@@ -1,9 +1,10 @@
-# Compatibility and validation — version 0.9.36
+# Compatibility and validation — version 0.9.37
 
 Updated 2026-09-16. Runtime reference: CSP build 4116. Version 0.9.3 replaced the side bars with a
 battery glyph inside the dial; version 0.9.35 reads one further native field on the standard FA26,
 its deployment request, and gives that car's panel a second chip; version 0.9.36 writes the word BOOST
-inside the glyph while that command is held. The Pro adapter, the validity rules and both replay-stream layouts are those of
+inside the glyph while that command is held; version 0.9.37 stops the Pro stream dropping every frame
+in which Straight Mode is engaged. The Pro adapter, the validity rules and both replay-stream layouts are those of
 0.9.2, so the checks below still apply to them; the standard-FA26 rows carry their own new pending
 item, because the samples behind them predate that field. The 0.9.1 ZIP is the earlier Pro-only
 build.
@@ -13,7 +14,7 @@ build.
 | Scenario | Behaviour | Checked | Still pending in game |
 | --- | --- | --- | --- |
 | Exact FA26 Pro, live | SM / OT / BOOST badges, full energy panel, Pro replay recording; partial data stays field-valid | Live evidence from 0.9.1 and earlier; offline regression; the 0.9.2 adapter read the car's real channel map (122 channels, all 18 used channels present) and passed a read / record / replay round-trip on it | A live session on the 0.9.2 adapter, including AI cars and a new Pro recording |
-| Exact FA26 Pro, old replays | Same stream names, types, 22 slots, 242 bytes, divisor 2; H / I wing fallback while the stream is absent | Layout and codec tests; 0.9.2 in game played a replay recorded on 2026-09-10 through the Pro stream: 130 periodic samples with changing values, `replayGaps` 0, no Lua errors | — |
+| Exact FA26 Pro, old replays | Same stream names, types, 22 slots, 242 bytes, divisor 2; H / I wing fallback while the stream is absent. Recordings from 0.9.2 to 0.9.36 have no data at all in the frames where Straight Mode was engaged, and cannot be repaired | Layout and codec tests; 0.9.2 in game played a replay recorded on 2026-09-10 through the Pro stream: 130 periodic samples with changing values, `replayGaps` 0, no Lua errors | — |
 | Standard FA26, live | SM off / available / active, manual BOOST, battery %, four native strategies, recovery state and the deployment request of the selected map; OT dark, the car has no overtake channel | 2,913 live samples across two sessions; rear-wing opening and brake charging observed in game. Those samples predate the deployment request | The deployment request against the car's own behaviour: nothing requested in `NODEPLOY`, below the maps' low-speed threshold or at the top of the speed range, and a request proportional to the throttle in between |
 | Standard FA26, new replays | Separate 132-byte native-state stream with per-field validity and owner; since 0.9.35 the deployment request travels in free bits of the existing strategy byte, with no change to the layout | A recording made after the writer correction holds 7,307 consecutive valid samples with no interior gaps; an end-to-end playback check draws the recorded values on all 7,306 recorded frames; in-game viewing reported `replayGaps` 0 in 22 periodic samples | — |
 | Standard FA26, old replays | Base dial only; unavailable history stays unknown | Old files sampled: native energy and control fields missing despite visible wing movement | — |
@@ -50,7 +51,7 @@ and repeat with `tests/test_hud_ui.lua`. The runner uses x86 PowerShell; no DLL 
 The fixtures are synthetic. Private sampling files, commercial vehicle files, replay files, local
 backups and machine logs are excluded from the repository.
 
-- Data tests (557 checks): exact classification, callable CSP API tables, 242 / 132-byte layouts,
+- Data tests (589 checks): exact classification, callable CSP API tables, 242 / 132-byte layouts,
   codecs, partial validity, zero / false, wrong owner or slot, missing frames, dropped cars,
   recording off, replay write protection, camera changes and range limits, and the deployment
   request's validation, evidence gate, round trip through the shared strategy byte and both

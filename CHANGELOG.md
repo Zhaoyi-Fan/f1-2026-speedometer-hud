@@ -2,7 +2,26 @@
 
 Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP build 4116.
 
-## 0.9.36 — 2026-09-16
+## 0.9.37 — 2026-09-16
+
+Fixes a recording defect that has been in the app since 0.9.2: whenever Straight Mode was engaged, the
+FA26 Pro's whole energy frame was dropped from the replay, so a saved lap showed `--` for battery,
+MGU-K, lap energy and strategy for as long as the wings were open.
+
+- The Straight Mode latch reports 4 while the mode is engaged, one step beyond the 0-3 the reader
+  accepted, and the latch is one of the fields the original stream requires before it will write a
+  frame. The reader now accepts 0-7, and the flag word carries the extra step in its free bit 13, so
+  the frame records normally and the engaged state is stored as itself for the first time.
+  - Recordings made before 0.9.2 are unaffected: that writer clamped the value to 3 and always wrote
+    the frame, which is why replays from that era play back complete.
+  - Recordings made by 0.9.2 to 0.9.36 cannot be repaired; the frames were never written.
+  - A reader older than 0.9.37 sees an engaged latch as 0, so its Straight Mode badge falls back to
+    the wing and mode flags, which are recorded separately and already turn it green.
+- The periodic diagnostics line now reports skipped Pro frames and the field that caused the last one
+  (`proSkip=<count>:<field>@<car>`). The old stream has no per-field validity, so one missing field
+  still costs a whole frame; from now on it says so instead of failing silently.
+
+
 
 Brings the word `BOOST` back, inside the glyph. Everything else, including the adapters and both
 replay streams, is exactly as in 0.9.35.

@@ -14,6 +14,7 @@ local BASIC_FIELDS = { speed = 'speedKmh', rpm = 'rpm', gear = 'gear', gas = 'ga
 local DRS_FIELDS = { 'drsPresent', 'drsAvailable', 'drsActive' }
 local PRO_FLAG_MASKS = { otActive = 1, otPending = 2, boost = 4, charge = 8, pl = 16,
   plp = 32, smActive = 256, wingF = 512, wingR = 1024, engineRunning = 2048, pitLimiter = 4096 }
+local LATCH_HIGH = 8192   -- bit 13, free since v0.9.1: the Straight Mode latch's third bit
 
 -- Evidence gates, not user settings. Enable only after an observed action/state comparison.
 -- Native FA25 replay flags are constant in the available samples and are NOT verified history.
@@ -119,7 +120,8 @@ function M.new(ac, sim, cfg)
   local data = { classify = classify, MAX_CARS = MAX_CARS, REPLAY_DIVISOR = PRO_DIVISOR,
     NATIVE_DIVISOR = NATIVE_DIVISOR, NATIVE_BYTES = MAX_CARS * 6,
     validation = M.validation, recordedPro = 0, recordedVanilla = 0, recordedDRS = 0,
-    recordingGaps = { totalNativeEmpty = 0, lastNativeReason = 'none', lastNativeIndex = -1 } }
+    recordingGaps = { totalNativeEmpty = 0, lastNativeReason = 'none', lastNativeIndex = -1,
+      totalProEmpty = 0, lastProReason = 'none', lastProIndex = -1 } }
   local can = { inputs = nil, carID = nil, count = 0, lastTry = -10, err = nil }
   data.can = can
   local function resetCAN()
@@ -128,8 +130,9 @@ function M.new(ac, sim, cfg)
   if type(ac.onSessionStart) == 'function' then
     pcall(ac.onSessionStart, function()
       resetCAN()
-      data.recordingGaps.totalNativeEmpty = 0
+      data.recordingGaps.totalNativeEmpty, data.recordingGaps.totalProEmpty = 0, 0
       data.recordingGaps.lastNativeReason, data.recordingGaps.lastNativeIndex = 'none', -1
+      data.recordingGaps.lastProReason, data.recordingGaps.lastProIndex = 'none', -1
     end)
   end
 
@@ -253,7 +256,10 @@ function M.new(ac, sim, cfg)
     local strategy = integer(get(car, 'mgukDelivery'), 0, 15)
     put(S, 'strat', strategy and strategy + 1)
     for key, channel in pairs(PRO_NUMBERS) do put(S, key, rd(physics, channel)) end
-    put(S, 'latch', integer(S.latch, 0, 3))
+    -- 0 off, 1 available, 2 pre-latched, 3 available inside the zone, 4 Straight Mode engaged
+    -- (the car's own audio script reads 4 as SLM). Values 0-7 are carried; 4 and above need the
+    -- flag word's third latch bit, added in 0.9.37.
+    put(S, 'latch', integer(S.latch, 0, 7))
     put(S, 'split', integer(S.split, 0, 31))
     put(S, 'puMode', integer(S.puMode, 0, 15))
     for key, channel in pairs(PRO_BOOLEANS) do
@@ -307,13 +313,23 @@ function M.new(ac, sim, cfg)
       clearSlot(data.VRS, NATIVE_FIELDS, i)
     end
   end
+  -- Latch bits 0-1 stay in bits 6-7 where v0.9.1 put them; bit 2 goes to the free bit 13, so a
+  -- reader older than 0.9.37 sees 4-7 as 0-3 and every other field of the frame still restores.
   local function packPro(S)
-    local f = 0x8000 + S.latch * 64
+    local f = 0x8000 + (S.latch % 4) * 64 + (S.latch >= 4 and LATCH_HIGH or 0)
     for field, mask in pairs(PRO_FLAG_MASKS) do if S[field] then f = f + mask end end
     return f
   end
   local function recordPro(S, i)
-    for _, field in ipairs(PRO_REQUIRED) do if not S.valid[field] then return false end end
+    -- The old stream has no per-field validity, so one missing field costs the whole frame. Name it:
+    -- a silently skipped frame is invisible in the replay until someone watches that stretch.
+    for _, field in ipairs(PRO_REQUIRED) do
+      if not S.valid[field] then
+        local gaps = data.recordingGaps
+        gaps.totalProEmpty, gaps.lastProReason, gaps.lastProIndex = gaps.totalProEmpty + 1, field, i
+        return false
+      end
+    end
     local r = data.RS
     r.f26soc[i] = quantize(S.soc * 250, 0, 255)
     r.f26kw[i] = quantize(S.kw / 3, -128, 127)
@@ -418,7 +434,8 @@ function M.new(ac, sim, cfg)
       put(S, field, value and value * encoding[2])
     end
     put(S, 'strat', p % 16 + 1); put(S, 'split', math.floor(p / 16) % 32)
-    put(S, 'puMode', math.floor(p / 512) % 16); put(S, 'latch', math.floor(f / 64) % 4)
+    put(S, 'puMode', math.floor(p / 512) % 16)
+    put(S, 'latch', math.floor(f / 64) % 4 + (has(f, LATCH_HIGH) and 4 or 0))
     -- Recorded false is authoritative: never OR it with a possibly stale native switch.
     for field, mask in pairs(PRO_FLAG_MASKS) do put(S, field, has(f, mask)) end
     S.full, S.source = true, 'replay: Pro app stream, car ' .. idx
