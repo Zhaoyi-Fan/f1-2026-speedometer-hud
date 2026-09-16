@@ -2,29 +2,20 @@
 
 [简体中文](README.zh-CN.md)
 
-A broadcast-style speedometer for Assetto Corsa. It follows the camera car and selects the
-appropriate FA26 Pro, native FA26 or conventional DRS display, keeping the v0.9.1 dial design.
+A broadcast-style speedometer for Assetto Corsa, built around the VRC Formula Alpha 2026. It follows
+the camera car and draws what that car has: Straight Mode, Overtake, Boost and a full energy panel on
+the FA26 Pro, the standard FA26's own systems, or a single DRS indicator on conventional cars. On both
+FA26 cars a battery glyph inside the dial shows the charge and whether the MGU-K is deploying or
+harvesting.
 
-Version **0.9.39** moves the battery glyph's percentage next to its terminal, with the bolt at the
-other end. It removes the always-dark `OT` badge from the standard FA26, which has no Overtake Mode at
-all: its `SM` badge now spans the row and turns yellow while available. It also records the DRS state
-of every car with a native DRS component into replays, because CSP's replay playback does not return
-it. **0.9.38** turned the battery glyph to face right by default, like a common battery icon, and
-added a setting that puts its terminal back on the left. **0.9.37** fixes a recording defect: Pro replays
-recorded since 0.9.2 had no energy data at all in the frames where Straight Mode was engaged.
-**0.9.36** writes `BOOST` inside the glyph while that command is held. **0.9.35** gave the
-standard FA26 its own deployment indication on the battery glyph that
-**0.9.3** introduced in place of the two side bars; the word appears on both cars, the Pro adapter is
-that of 0.9.3, the standard car's compact panel gains a second chip, and both replay-stream layouts
-are unchanged from 0.9.2. The [changelog](CHANGELOG.md) opens with one line per version and then the detail. See
+The [changelog](CHANGELOG.md) opens with one line per version and then the detail. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
-is still pending.
-The throttle arc shows AC's physics throttle, including the automatic gearbox's brief upshift
-cut and the downshift auto-blip ([known issues](docs/KNOWN-ISSUES.md)).
+is still pending. The throttle arc shows AC's physics throttle, including the automatic gearbox's
+brief upshift cut and the downshift auto-blip ([known issues](docs/KNOWN-ISSUES.md)).
 
 ![demo](docs/demo.gif)
 
-*Demo recorded with v0.9.38: an FA26 Pro replay at Silverstone.*
+*Demo recorded with v0.9.39: an FA26 Pro replay at Silverstone.*
 
 The app runs in Custom Shaders Patch (CSP). It combines a MultiViewer-style dial with the car's
 energy telemetry, so you can monitor deployment and harvesting while driving or watching a replay.
