@@ -55,7 +55,9 @@ has, and records DRS for every car that has one. The Pro stream and both stream 
   and leave those slots unread, so a 0.9.39 recording shows those cars' DRS as unavailable there. The
   standard FA26 and FA25 slots restore exactly as before in both directions. Replays recorded before
   0.9.39 hold no DRS history for other cars.
-- The README illustration now shows the new glyph layout and the standard FA26's badge row.
+- The README now opens with a short description of the app. Its demo GIF, recorded with this version,
+  and its illustration show the new glyph layout; the illustration also shows the standard FA26's
+  badge row.
 
 ## 0.9.38 — 2026-09-16
 
