@@ -50,7 +50,8 @@ through a profile of that car. The Pro, the standard FA26 and conventional cars 
 - **Checked in game** before the release (two races on a 2026 Silverstone layout mixing RSS and SP Mod
   cars, CSP build 4169): every AI car reported every field, the request equalled each program's own
   tables, the battery followed the recovery and deployment flags, the lap counter counted deployment
-  only and restarted every lap, the RSS's DRS changed the lift of both wings, the program names
+  only and restarted every lap, the RSS's DRS changed the lift of both wings, the driven car's availability rose at every zone start
+  with no gap required, the program names
   matched the profiles live and in replay, and replays read the app's own record. The on-screen
   layout of the new cars still awaits a look in game; see [COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - The diagnostics line now reads `recordedNative=<standard>/<conventional>/<hybrid>` and, on a hybrid,

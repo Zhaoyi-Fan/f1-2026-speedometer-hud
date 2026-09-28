@@ -22,8 +22,8 @@ with a few points of their own:
 - **Lap deploy** is live only and reads `--` in replays. It turns orange at the car's per-lap limit;
   that state is drawn by the same code as the rest of the row but was not reached in the sampled races;
 - the badge's availability comes from the track's zones as AC applies them to its own DRS component. On
-  the 2026 layouts sampled (zones without a detection point) it rose at every zone start in a race,
-  with no car within a second. On a layout with classic DRS zones AC's own detection rule decides
+  the 2026 layout sampled (zones without a detection point) the driven car's badge rose at every zone
+  start in a race, with no car within a second. On a layout with classic DRS zones AC's own detection rule decides
   instead; that case was not sampled.
 
 ## Replays recorded without the app show conventional DRS dark

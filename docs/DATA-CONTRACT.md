@@ -208,8 +208,9 @@ and SP Mod AI cars, then an SP Mod SF-26 driven with the same mix; about 43,000 
   requested 1 with charge and 0 without, and the SP Mod AI dropped to about 0.05;
 - the lap counter grew only while deploying (about 327 kW on the RSS and 83 kW on the SP Mod cars at a
   full request) and restarted every lap, before either limit was reached;
-- the RSS's DRS changed the lift of both the rear and the front element; in both races availability
-  rose at every zone start with no car within a second (the layout's zones have no detection point);
+- the RSS's DRS changed the lift of both the rear and the front element; in both races the driven car's
+  availability rose at every zone start with no car within a second (the layout's zones have no detection
+  point);
 - the program names matched the profiles exactly, live and in replay, and in replays the HUD read its
   own record.
 
