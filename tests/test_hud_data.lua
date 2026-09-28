@@ -540,8 +540,10 @@ local SP_IDS = { 'f1_2026_amr26', 'f1_2026_mac26', 'f1_2026_mcl40', 'f1_2026_r26
   'f1_2026_w17' }
 local RSS_MAPS = { 'No deploy', 'Low', 'Balanced', 'High', 'Qualy', 'Override' }
 local SP_MAPS = { 'Charging', 'Balanced low', 'Balanced high', 'Linear', 'Overtake', 'Top Speed', 'Hotlap' }
-check(not D.validation.hybridAero and not D.validation.hybridRecovery and not D.validation.hybridDeploy
-  and not D.validation.hybridLapEnergy, 'hybrid evidence gates stay closed until the cars are observed in game')
+check(D.validation.hybridAero and D.validation.hybridRecovery and D.validation.hybridDeploy
+  and D.validation.hybridLapEnergy, 'hybrid evidence gates open for the in-game check')
+-- Exercise the missing-evidence branch first; later scenarios open the gates again.
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = false, false, false, false
 equal(data.classify(RSS), 'hybrid', 'RSS FHX 2026 is a native hybrid')
 for _, id in ipairs(SP_IDS) do equal(data.classify(id), 'hybrid', 'SP Mod car is a native hybrid: ' .. id) end
 for _, id in ipairs({ 'rss_formula_hybrid_x', 'rss_formula_hybrid_x_evo', 'rss_formula_hybrid_2021', 'f1_2026_w18',
@@ -742,7 +744,7 @@ observeWrite = function(r, key, i)
 end
 c = hybridCar(0, SF); HO.recordAll(); observeWrite = nil
 equal(HO.VRS.f26n1valid[0], 127, 'the hybrid adds its energy fields')
-D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = false, false, false, false
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = true, true, true, true
 local result = 'PASS: hud_data (' .. checks .. ' checks; synthetic adapter/replay contracts, not in-game validation)'
 print(result)
 return result

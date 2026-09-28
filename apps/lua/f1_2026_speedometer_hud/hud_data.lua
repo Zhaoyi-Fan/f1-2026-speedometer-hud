@@ -49,15 +49,17 @@ local LATCH_HIGH = 8192   -- bit 13, free since v0.9.1: the Straight Mode latch'
 -- produce from throttle and speed. It is a requested share of the car's deployment, never a
 -- measured power, and only values inside 0..1 are accepted. The diagnostics line reports it
 -- beside the battery level so live samples can be compared against the charge they consume.
--- Native hybrids have their own gates, opened only by observations made on those cars:
+-- Native hybrids have their own gates, each confirmed by observations made on those cars:
 --   hybridAero       an 'sm' profile's DRS moves both wings in game, so it is shown as Straight Mode
 --   hybridRecovery   kersCharging coincides with the battery rising
 --   hybridDeploy     kersInput follows the selected program's throttle x speed x gear request and the
 --                    battery falls while it is positive
 --   hybridLapEnergy  kersCurrentKJ counts the energy deployed this lap against kersMaxKJ, resetting at the line
+-- Opened on the cars' own data files and the standard FA26's measured fields (2026-09-28), for the
+-- in-game check that confirms or closes each one.
 M.validation = { vanillaSM = true, vanillaRecovery = true, vanillaDeploy = true,
-  legacyReplayDRS = false, hybridAero = false, hybridRecovery = false, hybridDeploy = false,
-  hybridLapEnergy = false }
+  legacyReplayDRS = false, hybridAero = true, hybridRecovery = true, hybridDeploy = true,
+  hybridLapEnergy = true }
 
 local function finite(v)
   return type(v) == 'number' and v == v and v > -math.huge and v < math.huge
