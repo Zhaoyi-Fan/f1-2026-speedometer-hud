@@ -1,6 +1,9 @@
 -- Execute the production HUD with synthetic adapter snapshots and a drawing recorder.
 -- No game, native probe, filesystem writes, or commercial car data are used.
 -- Drawing bounds check geometry/text boxes, not actual Windows font glyph rendering.
+-- MoonSharp (the offline runner) can return nil from the first os.clock() of a process, when its clock
+-- origin is set a tick after the reading; CSP's LuaJIT never does. Keep the suite deterministic about it.
+do local clock = os.clock; os.clock = function() return clock() or 0 end end
 local checks, cases = 0, 0
 local function check(condition, message)
   checks = checks + 1

@@ -49,14 +49,17 @@ local LATCH_HIGH = 8192   -- bit 13, free since v0.9.1: the Straight Mode latch'
 -- produce from throttle and speed. It is a requested share of the car's deployment, never a
 -- measured power, and only values inside 0..1 are accepted. The diagnostics line reports it
 -- beside the battery level so live samples can be compared against the charge they consume.
--- Native hybrids have their own gates, each confirmed by observations made on those cars:
---   hybridAero       an 'sm' profile's DRS moves both wings in game, so it is shown as Straight Mode
---   hybridRecovery   kersCharging coincides with the battery rising
---   hybridDeploy     kersInput follows the selected program's throttle x speed x gear request and the
---                    battery falls while it is positive
---   hybridLapEnergy  kersCurrentKJ counts the energy deployed this lap against kersMaxKJ, resetting at the line
--- Opened on the cars' own data files and the standard FA26's measured fields (2026-09-28), for the
--- in-game check that confirms or closes each one.
+-- Native hybrids have their own gates, opened on in-game samples of those cars (two races on a 2026
+-- Silverstone layout, September 2026: the RSS and then an SP Mod SF-26 driven, RSS and SP Mod AI):
+--   hybridAero       the RSS's DRS changes the lift of both its rear and its front element, so it is shown
+--                    as Straight Mode; in a race its availability rose at every zone start with no car
+--                    within a second
+--   hybridRecovery   the battery rose on 77-96 % of the samples flagged kersCharging
+--   hybridDeploy     kersInput equals the selected program's throttle x speed x gear tables on steady
+--                    samples (the game itself lowers it at an empty battery), and the battery fell on
+--                    91-98 % of the samples where it was positive
+--   hybridLapEnergy  kersCurrentKJ grew only while deploying (about 327 kW on the RSS, 83 kW on the SP Mod
+--                    cars at a full request) and restarted every lap, against kersMaxKJ 9000 / 4000
 M.validation = { vanillaSM = true, vanillaRecovery = true, vanillaDeploy = true,
   legacyReplayDRS = false, hybridAero = true, hybridRecovery = true, hybridDeploy = true,
   hybridLapEnergy = true }

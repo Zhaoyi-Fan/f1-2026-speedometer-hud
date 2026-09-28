@@ -1,5 +1,8 @@
 -- Run with tools/test.ps1 (MoonSharp), or provide loadHudData() in another Lua runner.
 -- Synthetic values only: no mod source, personal telemetry or replay files.
+-- MoonSharp (the offline runner) can return nil from the first os.clock() of a process, when its clock
+-- origin is set a tick after the reading; CSP's LuaJIT never does. Keep the suite deterministic about it.
+do local clock = os.clock; os.clock = function() return clock() or 0 end end
 local D = loadHudData()
 local checks = 0
 local function check(condition, message)
@@ -541,7 +544,7 @@ local SP_IDS = { 'f1_2026_amr26', 'f1_2026_mac26', 'f1_2026_mcl40', 'f1_2026_r26
 local RSS_MAPS = { 'No deploy', 'Low', 'Balanced', 'High', 'Qualy', 'Override' }
 local SP_MAPS = { 'Charging', 'Balanced low', 'Balanced high', 'Linear', 'Overtake', 'Top Speed', 'Hotlap' }
 check(D.validation.hybridAero and D.validation.hybridRecovery and D.validation.hybridDeploy
-  and D.validation.hybridLapEnergy, 'hybrid evidence gates open for the in-game check')
+  and D.validation.hybridLapEnergy, 'hybrid evidence gates opened after the in-game samples')
 -- Exercise the missing-evidence branch first; later scenarios open the gates again.
 D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = false, false, false, false
 equal(data.classify(RSS), 'hybrid', 'RSS FHX 2026 is a native hybrid')
