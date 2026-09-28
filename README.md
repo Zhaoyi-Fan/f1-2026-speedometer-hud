@@ -4,9 +4,9 @@
 
 A broadcast-style speedometer for Assetto Corsa, built around the VRC Formula Alpha 2026. It follows
 the camera car and draws what that car has: Straight Mode, Overtake, Boost and a full energy panel on
-the FA26 Pro, the standard FA26's own systems, or a single DRS indicator on conventional cars. On both
-FA26 cars a battery glyph inside the dial shows the charge and whether the MGU-K is deploying or
-harvesting.
+the FA26 Pro; the own systems of the standard FA26, RSS Formula Hybrid X 2026 and the SP Mod F1 2026
+cars; or a single DRS indicator on conventional cars. On all but the conventional cars a battery glyph
+inside the dial shows the charge and whether the MGU-K is deploying or harvesting.
 
 The [changelog](CHANGELOG.md) opens with one line per version and then the detail. See
 [compatibility and validation](docs/COMPATIBILITY.md) for what has been checked in game and what
@@ -28,12 +28,16 @@ remote cars can expose fewer fields; missing data is never replaced by the playe
 | --- | --- | --- |
 | FA26 Pro, exact ID `vrc_formula_alpha_2026_csp` | SM / OT / BOOST | Full Pro panel and original Pro replay stream |
 | Native FA26, exact ID `vrc_formula_alpha_2026` | `SM` across the badge row, and BOOST; no `OT` badge, because the car has no Overtake Mode | Battery %, LOW / MEDIUM / HIGH / NODEPLOY, manual BOOST, Straight Mode, deployment request and recovery state |
+| RSS Formula Hybrid X 2026, exact ID `rss_formula_hybrid_x_2026` | `SM` across the badge row (its DRS opens both wings, the car's X-mode), and BOOST; no `OT` badge | Battery %, the car's six MGU-K programs, manual override, deployment request, recovery state, and the energy deployed this lap against its 9 MJ limit (live only) |
+| SP Mod F1 2026, exact IDs `f1_2026_amr26`, `f1_2026_mac26`, `f1_2026_mcl40`, `f1_2026_r26`, `f1_2026_rb22`, `f1_2026_sf26`, `f1_2026_w17` | `DRS` across the badge row (a rear-flap DRS), and BOOST | As for the RSS, with the SP Mod cars' seven programs and their 4 MJ limit |
 | FA25 and other conventional cars | One centered DRS indicator, green only for a valid active state | No Pro energy panel; every car with a native DRS component gets a small DRS recording (before 0.9.39, only the exact FA25 CSP) |
 | Cars without DRS | The same DRS indicator, always dark | No energy panel |
 
 The **car selects the layout**. Track zones and rules affect availability, and actual reported
 state controls activation. A FA25 on a 2026 track still shows DRS; a Pro without CAN data still
-uses the Pro layout. Unknown state leaves indicators dark and numeric readings as `--`.
+uses the Pro layout. Unknown state leaves indicators dark and numeric readings as `--`. The RSS and
+SP Mod profiles are exact to those car IDs and come from the cars' own data files; another RSS
+Formula Hybrid, or a renamed copy of one of these cars, uses the conventional layout.
 
 ## Display
 
@@ -95,6 +99,22 @@ which is what yellow means on the Pro; there is no pre-latch and no white prompt
 has no Overtake Mode at all, so its dial has no `OT` badge. Recovery is distinct from Pro Charge / Anti mode.
 No Pro MJ capacity, kW estimate, lap-recovery quota, split or PU mode is assigned to this car.
 
+**RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars** (the native hybrids) follow the standard
+FA26's rules with their own names. The panel names the car's selected MGU-K program (`No deploy`,
+`Low`, `Balanced`, `High`, `Qualy`, `Override` on the RSS; `Charging`, `Balanced low`, `Balanced high`,
+`Linear`, `Overtake`, `Top Speed`, `Hotlap` on the SP Mod cars) and adds **Lap deploy**: the energy
+deployed this lap against the car's per-lap limit, as `3.21 / 9.0 MJ` with a green bar that turns
+orange once the limit is reached. That row is live only and reads `--` in replays. The badge spans the
+row as on the standard FA26 — dark when off, yellow while available, green while open — and reads
+`SM` on the RSS, whose DRS opens both the rear and the front wing (the car's own dash calls it
+X-mode), and `DRS` on the SP Mod cars, whose DRS is the rear flap. Neither car has an Overtake Mode:
+RSS's `Override` and SP Mod's `Overtake` are deployment programs, and the override button is BOOST.
+The ring's brightness is the requested share of that car's own MGU-K (about 346 kW on the RSS, 111 kW
+on the SP Mod cars), and when the battery is empty the car itself lowers the request, so the ring
+dims or goes dark. The SF-26 and MCL40 also charge their battery through an MGU-H under throttle,
+which raises the percentage without a red ring. Availability comes from the track's zones: on the 2026
+layout sampled, the badge turned yellow at every zone start with no gap to the car ahead required.
+
 By default, the HUD follows the **camera-focused car**. You can switch between cars in a replay
 to view their recorded data, or bind a button to keep the HUD on your own car.
 
@@ -123,15 +143,16 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 - Assetto Corsa with Custom Shaders Patch. The VRC Formula Alpha 2026 needs CSP
   0.3.0-preview542 or newer. The app was developed and tested on build 4116.
-- Pro energy data requires **VRC Formula Alpha 2026 Pro**. Native FA26 and conventional DRS
-  use separate adapters; other manufacturers' custom 2026 systems are not supported.
+- Pro energy data requires **VRC Formula Alpha 2026 Pro**. The standard FA26, the native hybrids
+  (RSS Formula Hybrid X 2026 and the seven SP Mod F1 2026 cars) and conventional DRS use separate
+  adapters; other custom 2026 systems are not supported.
 - The app consists of two Lua files and a manifest. No separate DLL, SimHub or Python installation
   is required.
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.39.zip` from the
-[v0.9.39 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.39)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.4.zip` from the
+[v0.9.4 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.4)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -139,8 +160,10 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.39**. Since 0.9.39 the standard FA26
-shows `SM` across the badge row and no `OT` badge, and the glyph's percentage sits beside its terminal.
+replay and check that the settings window shows version **0.9.4**. Since 0.9.4 the RSS Formula Hybrid
+X 2026 and the SP Mod F1 2026 cars have their own layout, with a taller compact panel. Since 0.9.39
+the standard FA26 shows `SM` across the badge row and no `OT` badge, and the glyph's percentage sits
+beside its terminal.
 Since 0.9.38 the battery glyph faces right; set Display › Battery terminal to Left to put the terminal
 back on the left. The dial no longer has side
 bars, so the window is 340 units wide plus the panel for every car (with the bars on it was up to
@@ -190,6 +213,12 @@ size or layout: it travels in four free bits of the byte that already carried th
 Recordings made by earlier versions restore exactly as before. A recording made by 0.9.35 and
 opened in an earlier version shows the standard FA26's strategy as unavailable, because those
 versions accept that byte only as a plain index; every other recorded field still restores.
+
+Version 0.9.4 keeps the RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars in that generic family
+and adds their battery, BOOST, program, recovery and deployment request to the same record, again
+without changing the layout. Version 0.9.39 still reads those cars' recorded DRS and nothing else; a
+0.9.39 recording opened in 0.9.4 gives them their DRS and leaves the energy readings unknown. The
+lap-deploy row is not recorded. CSP's own playback of these cars returns no energy or DRS history.
 
 When that data is present, the HUD can show the recorded energy readings in saved and in-session
 replays. Other users with the app installed can also view the data in a shared replay.
@@ -254,8 +283,8 @@ replay format are documented in [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md).
 ## Limitations and planned features
 
 - Replays record up to 22 cars, with indices 0–21. Cars with index 22 or higher are not recorded.
-- Native FA26 has a smaller, distinct feature set. Other manufacturers' custom 2026 mods and
-  equal telemetry coverage for online remote cars are not claimed.
+- The standard FA26 and the native hybrids have smaller, distinct feature sets. Other custom 2026
+  mods and equal telemetry coverage for online remote cars are not claimed.
 - A live Pro session on the 0.9.2 adapter (including AI cars), mixed-camera operation and actual
   font rendering still require the in-game checks listed in
   [COMPATIBILITY.md](docs/COMPATIBILITY.md). Offline tests are not a substitute for those checks.
@@ -264,10 +293,13 @@ replay format are documented in [docs/DATA-CONTRACT.md](docs/DATA-CONTRACT.md).
 
 - Car, physics and telemetry bus: [VRC Modding Team](https://www.virtual-racing-cars.com/)'s
   Formula Alpha 2026.
+- Native-hybrid profiles: read from Race Sim Studio's Formula Hybrid X 2026 and SP Mod's F1 2026 cars.
+  No file of either is included.
 - The dial layout and colours are based on the community's MultiViewer-style speedometer
   overlays. No assets from those apps are included.
 - Runs on [Custom Shaders Patch](https://acstuff.club/patch/).
-- Not affiliated with Formula One, the FIA, Kunos or VRC. "F1" is used descriptively.
+- Not affiliated with Formula One, the FIA, Kunos, VRC, Race Sim Studio or SP Mod. "F1" is used
+  descriptively.
 
 ## License
 

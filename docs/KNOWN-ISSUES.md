@@ -1,9 +1,30 @@
-# Known issues — version 0.9.39
+# Known issues — version 0.9.4
 
-Updated 2026-09-16 for version 0.9.39 (the glyph's percentage beside its terminal, the standard FA26's
+Updated 2026-09-28 for version 0.9.4 (native-hybrid layouts for RSS Formula Hybrid X 2026 and the SP Mod
+F1 2026 cars), on top of version 0.9.39 (the glyph's percentage beside its terminal, the standard FA26's
 badge row and DRS recording for every car with native DRS, on 0.9.38's right-facing battery glyph and its terminal setting, 0.9.37's Straight Mode
 latch fix, 0.9.36's word BOOST, 0.9.35's standard-FA26 deployment request and 0.9.3's in-dial battery
 glyph; replay-stream layouts as in 0.9.2).
+
+## Native hybrids: what the ring, the badge and the Lap deploy row mean
+
+RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars follow the standard FA26's rules (next sections),
+with a few points of their own:
+
+- the ring's brightness is the requested share of that car's own MGU-K, about 346 kW on the RSS and
+  111 kW on the SP Mod cars, so equal brightness on two cars is not equal power. The RSS's `Low`,
+  `Balanced` and `High` programs ask for at most about 0.29 and stop at 270–300 km/h, so the ring is
+  dim or dark on long straights; `Qualy` lights it up to 0.8, `Override` and the button fully;
+- at an empty battery the car lowers the request by itself (the RSS's held button fell from 1 to 0;
+  the SP Mod AI dropped to about 0.05), so the ring dims or goes dark while the percentage reads 0 %;
+- the SF-26 and MCL40 also charge the battery through an MGU-H under throttle. That raises the
+  percentage without the car reporting recovery, so no red ring is drawn for it;
+- **Lap deploy** is live only and reads `--` in replays. It turns orange at the car's per-lap limit;
+  that state is drawn by the same code as the rest of the row but was not reached in the sampled races;
+- the badge's availability comes from the track's zones as AC applies them to its own DRS component. On
+  the 2026 layouts sampled (zones without a detection point) it rose at every zone start in a race,
+  with no car within a second. On a layout with classic DRS zones AC's own detection rule decides
+  instead; that case was not sampled.
 
 ## Replays recorded without the app show conventional DRS dark
 

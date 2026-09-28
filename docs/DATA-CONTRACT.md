@@ -1,7 +1,9 @@
 # Data contract
 
-This document describes version 0.9.39 (the glyph's percentage beside its terminal, the standard FA26's
-badge row and the generic DRS recording family, on top of 0.9.38's right-facing battery glyph,
+This document describes version 0.9.4 (native-hybrid profiles for RSS Formula Hybrid X 2026 and
+the SP Mod F1 2026 cars, recorded in the generic family), on top of 0.9.39 (the glyph's percentage
+beside its terminal, the standard FA26's badge row and the generic DRS recording family), 0.9.38's
+right-facing battery glyph,
 0.9.37's Straight Mode latch engaged state in the Pro stream,
 0.9.36's word BOOST inside the glyph while the command is held,
 on top of 0.9.35's standard-FA26 deployment request and the in-dial battery glyph of 0.9.3; the Pro adapter, the validity rules and both replay-stream layouts
@@ -16,10 +18,12 @@ in [COMPATIBILITY.md](COMPATIBILITY.md).
 | --- | --- | --- |
 | Live, FA26 Pro | `ac.getCar(i)` | VRC telemetry bus (below); battery = `car.kersCharge`; STRAT = `car.mgukDelivery + 1` |
 | Live, exact native FA26 | `ac.getCar(i)` | Validated native fields below; compact panel |
+| Live, native hybrid (exact profile ID) | `ac.getCar(i)` | Validated native fields below, read through the car's profile; compact panel with the lap-deploy row |
 | Live, conventional car | `ac.getCar(i)` | Native DRS only; no energy panel |
 | Replay, exact Pro | AC's own replay | Original Pro stream; H / I only when that stream is absent |
 | Replay, exact native FA26 | AC's own replay | Native-state stream, independently valid fields; no unverified native false/zero fallback |
 | Replay, exact FA25 CSP | AC's own replay | Native-state DRS recording if present; tested native history is unreliable |
+| Replay, native hybrid | AC's own replay | Native-state stream, generic family: the energy fields from recordings made since 0.9.4, only the DRS from 0.9.39 recordings; the lap-deploy row is never recorded. For these cars CSP playback returned a frozen or zero battery, no request or button and a fixed DRS state |
 | Replay, other conventional car | AC's own replay | Native-state DRS recording (generic family, since 0.9.39) if present; otherwise unknown/dark, because CSP playback returns no DRS history |
 
 The car index is the camera-focused car (`sim.focusedCar`, then `sim.closelyFocusedCar`, then 0),
@@ -27,8 +31,11 @@ or 0 when "lock to player car" is on.
 
 Exact IDs are `vrc_formula_alpha_2026_csp` (Pro), `vrc_formula_alpha_2026` (native FA26)
 and `vrc_formula_alpha_2025_csp` (the conventional model receiving supplemental DRS recording).
-Unrecognised IDs use the conventional layout; prefixes, model year and track names are not
-evidence of Pro CAN compatibility. There is no capability expansion for other 2026 mods.
+The native-hybrid profiles are exact to `rss_formula_hybrid_x_2026` and the seven SP Mod IDs
+`f1_2026_amr26`, `f1_2026_mac26`, `f1_2026_mcl40`, `f1_2026_r26`, `f1_2026_rb22`, `f1_2026_sf26`
+and `f1_2026_w17`. Unrecognised IDs use the conventional layout; prefixes, model year and track names
+are not evidence of Pro CAN compatibility, and another RSS Formula Hybrid or a renamed copy of a
+profiled car is not a hybrid. There is no capability expansion for other 2026 mods.
 
 Every snapshot is cleared before reading. `valid[field]` distinguishes usable false/zero from
 missing values; `supported[field]` can distinguish known absence from unknown capability.
@@ -40,7 +47,7 @@ cars, unavailable getters and mismatched indices are handled without retaining t
 ## Pedal arcs and recovery display
 
 The throttle and brake arcs draw `car.gas` and `car.brake` from the current update, and the native
-FA26 recovery chip draws the current `recovering` state. Nothing is smoothed, delayed or held.
+FA26 and native-hybrid recovery chip draws the current `recovering` state. Nothing is smoothed, delayed or held.
 
 `car.gas` is AC's physics throttle after gearbox assists, not the driver's pedal. Replays store
 both values per car frame, but CSP exposes only the physics value, interpolated between 15 ms
@@ -63,7 +70,8 @@ writer report 0. The counter never affects drawing.
 The glyph in the dial draws the current update only. Nothing is smoothed, delayed or held, apart
 from the one decorative easing declared at the end of this section.
 
-- **Charge**: fill length and the percentage come from `kersCharge` (Pro and native FA26). The fill
+- **Charge**: fill length and the percentage come from `kersCharge` (Pro, native FA26 and native
+  hybrids). The fill
   is anchored to the wall opposite the terminal, whose side is a display setting. With the terminal on
   the right (the default since 0.9.38) that is the left wall, so deploying moves the fill edge to the
   left and harvesting to the right; since 0.9.39 the percentage sits beside the terminal
@@ -82,7 +90,7 @@ from the one decorative easing declared at the end of this section.
   the body colour wherever it stands. Position is its only side-dependent property; the symbol is
   never flipped.
 - **Body**: magenta while the manual Boost command is valid and true (`isHybridBoostActive` on the
-  Pro, `kersButtonPressed` on the native FA26), otherwise the track colour. This is the former
+  Pro, `kersButtonPressed` on the native FA26 and the native hybrids), otherwise the track colour. This is the former
   `BOOST` badge's rule; the badge itself returns when the glyph is switched off. On a magenta body
   the bolt is drawn white so it stays visible; the ring keeps the flow hue.
 - **Ring, terminal and bolt (Pro)**: the sign of `rearMotorPowerKW` beyond a ±5 kW deadband decides
@@ -92,7 +100,7 @@ from the one decorative easing declared at the end of this section.
   halo alpha proportional to i². `mgukMaxPower` is never used, because it reads 0 or −350 during
   super-clipping live and is clamped to 0 in replays. Overtake, Charge mode, PL / PLP and the pit
   limiter never colour the ring; they remain chips in the panel.
-- **Native FA26**: green while `deployInput` is valid and above a 0.02 deadband, at that same value
+- **Native FA26 and native hybrids**: green while `deployInput` is valid and above a 0.02 deadband, at that same value
   as the intensity (magenta instead while the Boost command is valid and true); otherwise red at a
   fixed intensity of 0.6 while `recovering` is valid and true. The deployment request is tested
   first, because it is the input the car is acting on in this update, while recovery is a status it
@@ -102,7 +110,9 @@ from the one decorative easing declared at the end of this section.
   Without a valid request the ring falls back to the recovery rule alone, exactly as 0.9.3 drew it.
   The button colours the body only. The live deadband (0.02) is finer than the recorded step (1/14),
   so a request between the two lights the ring live and reads as zero in the replay of the same
-  frame; each side draws what it holds, and neither holds nor smooths anything.
+  frame; each side draws what it holds, and neither holds nor smooths anything. On a native hybrid the
+  request is a share of that car's own MGU-K (about 346 kW on the RSS, 111 kW on the SP Mod cars), so
+  the same brightness means different powers on different cars.
 - **Unknown or invalid**: while `kw` is invalid (Pro live before the CAN map appears, replay slots
   without the app stream) the ring is idle white; while `soc` is invalid the glyph shows `--` with
   no fill and no bolt. Nothing is retained from the previous update. Conventional cars draw no glyph.
@@ -153,7 +163,7 @@ The latch colours are suppressed below 1 km/h; a valid open wing retains the pre
 precedence. Each source must be valid. Recorded false takes precedence over the native switches;
 native H / I is used only when the Pro stream is absent, never on FA25 or native FA26.
 
-## Native FA26 and conventional DRS
+## Native FA26, native hybrids and conventional DRS
 
 | Field | Source | Meaning and validation |
 | --- | --- | --- |
@@ -165,6 +175,9 @@ native H / I is used only when the Pro stream is absent, never on FA25 or native
 | DRS capability | `drsPresent` | Known false forces available/active false during trusted live reading |
 | Availability | `drsAvailable` | Separate from actual activation and does not imply a track-rule implementation by the HUD |
 | Activation | `drsActive` | Native FA26 SM or conventional DRS; rear-wing movement and live transitions verified for native FA26 |
+| Deployment request, native hybrid | `kersInput`, with `kersPresent` and the profile's closed-throttle floor | As on the standard FA26. SP Mod's throttle tables start at −0.005, so a value between the profile's floor (−0.01) and 0 reads as a zero request (none was seen in game); anything else outside 0–1 is rejected |
+| Program, native hybrid | `mgukDelivery`, `mgukDeliveryCount`, `ac.getMGUKDeliveryName(carIndex, programIndex)` | The car's own name; recorded only when it equals the profile's name at that index: RSS `No deploy`, `Low`, `Balanced`, `High`, `Qualy`, `Override`; SP Mod `Charging`, `Balanced low`, `Balanced high`, `Linear`, `Overtake`, `Top Speed`, `Hotlap` |
+| Lap deploy, native hybrid | `kersCurrentKJ`, `kersMaxKJ`, with `kersPresent` | Energy deployed this lap against the car's per-lap limit (`MAX_KJ_PER_LAP`: 9,000 kJ on the RSS, 4,000 kJ on the SP Mod cars). The limit must lie in 1–50,000 kJ (the standard FA26 declares 99,999, meaning none) and the count must not be negative. Live only |
 
 Native FA26 SM has only off / available / on states and never reads the Pro latch or H / I. Its
 availability starts only inside a zone, so since 0.9.39 it is drawn in the Pro's yellow "available,
@@ -175,6 +188,33 @@ recovery, SM, battery, BOOST and deployment
 paths were validated from private in-game sampling in September 2026; the source does not include
 those samples or any commercial car files. The car's observed tail-wing opening is not a claim
 of independently verified front-wing actuation.
+
+The native hybrids read the same fields through an exact profile per car ID, taken from each car's
+own data files. The RSS Formula Hybrid X 2026's DRS component moves both the rear element and a front
+one (the car's own dash calls it X-mode), so it is drawn as `SM` in the standard FA26's three states;
+the SP Mod cars' DRS is the rear flap and keeps the label `DRS`, in the same three states. Neither car
+has an Overtake Mode: RSS's `Override` and SP Mod's `Overtake` are programs, shown by name, and the
+override button is BOOST. The four hybrid paths have their own evidence gates, opened on private
+in-game sampling (September 2026, two races on a 2026 Silverstone layout: the RSS driven with nine RSS
+and SP Mod AI cars, then an SP Mod SF-26 driven with the same mix; about 43,000 samples):
+
+- every AI car reported every native field, and the SP Mod cars switch programs in the cockpit as the
+  RSS does;
+- the battery rose on 77–96 % of the samples flagged as recovering and fell on 91–98 % of those with a
+  positive request;
+- on steady samples the request equalled the selected program's throttle × speed × gear tables (within
+  0.02 on every AI sample; 97 % for the driven SF-26, the rest being the car's own smoothing at a
+  table's cliff), except that the game lowers it by itself at an empty battery: the RSS's held button
+  requested 1 with charge and 0 without, and the SP Mod AI dropped to about 0.05;
+- the lap counter grew only while deploying (about 327 kW on the RSS and 83 kW on the SP Mod cars at a
+  full request) and restarted every lap, before either limit was reached;
+- the RSS's DRS changed the lift of both the rear and the front element; in both races availability
+  rose at every zone start with no car within a second (the layout's zones have no detection point);
+- the program names matched the profiles exactly, live and in replay, and in replays the HUD read its
+  own record.
+
+The SF-26 and MCL40 also charge the battery through an MGU-H under throttle; that raises the
+percentage without a recovery flag and is not drawn.
 
 Sampled FA25 native replay `drsActive` stayed false and `drsAvailable` stayed true while live
 samples changed. Old native FA26 saved replays similarly lost battery, BOOST and deployment
@@ -220,11 +260,11 @@ is the exact layout below. The Pro layout is never enlarged or reused for native
 
 | Field | Array element | Encoding |
 | --- | --- | --- |
-| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; any other car reporting a native DRS component (0.9.39) `0xA000 + index + 1`; 0 = absent |
+| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; any other car reporting a native DRS component (0.9.39), and a native hybrid (0.9.4), `0xA000 + index + 1`; 0 = absent |
 | `f26n1valid` | uint8 | bit 0 SoC, 1 BOOST, 2 strategy, 3 recovery, 4 DRS present, 5 available, 6 active |
 | `f26n1state` | uint8 | bit 0 BOOST, 1 recovery, 2 DRS present, 3 available, 4 active |
 | `f26n1soc` | uint8 | SoC × 250, nearest integer, range 0–250; max error 0.2 percentage points |
-| `f26n1strategy` | uint8 | bits 0-3: 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY. bits 4-7 (0.9.35): 0 = no deployment request recorded, 1-15 = nearest integer of request × 14, plus 1, so the request carries its own validity and needs no bit in `f26n1valid`; steps of 1/14, max error 0.036 of the request, and a request below 0.036 records as zero |
+| `f26n1strategy` | uint8 | bits 0-3: the program index, 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY on the standard FA26 and the profile's list on a native hybrid (0.9.4). bits 4-7 (0.9.35; native hybrids since 0.9.4): 0 = no deployment request recorded, 1-15 = nearest integer of request × 14, plus 1, so the request carries its own validity and needs no bit in `f26n1valid`; steps of 1/14, max error 0.036 of the request, and a request below 0.036 records as zero |
 
 Each field is an array of length 22. The 0.9.35 addition deliberately stays inside this layout: the
 slot count, the byte count, the divisor and every validity bit are those of schema 1, so recordings
@@ -237,8 +277,10 @@ charge, BOOST, recovery and DRS fields of the same slot still restore; readers f
 The owner embeds the schema/car family and slot; playback
 requires an exact expected owner for the selected car ID and index. A valid false or zero is
 authoritative; native defaults never overwrite it. Strategy is recorded only when the native
-API name matches the four-name contract. A different name can display live but is not silently
-recorded as a different strategy. FA25 and generic slots only use the DRS subset.
+API name matches the car's contract: the four names on the standard FA26, the profile's list on a
+native hybrid. A different name can display live but is not silently recorded as a different
+strategy, and a replay names a recorded index from that same contract, never from the playback API.
+FA25 and conventional generic slots use only the DRS subset.
 
 The generic family (0.9.39) covers every car except the standard FA26 and the exact FA25 CSP, but a
 slot is written only while the car reports a DRS component through trusted physics. A car without
@@ -247,6 +289,14 @@ while it shows a component is counted. The Pro's adapter never reads native DRS,
 a native slot. Readers older than 0.9.39 know no generic family and leave such slots unread. The
 layout, the other two families and every validity bit are unchanged, so recordings restore field for
 field in both directions.
+
+Since 0.9.4 a native hybrid stays in the generic family and adds its battery, BOOST, program,
+recovery and deployment-request fields to the same slot, with the same bits and encodings as the
+standard FA26; it is also written, and counted as a gap when missing, while it reports KERS without a
+DRS component. The car ID tells the reader which profile applies, so no new family code is needed. A
+0.9.39 reader takes only the DRS bits from a generic slot, so it still shows the recorded DRS of these
+cars and nothing else; a 0.9.4 reader of a 0.9.39 recording gets their DRS and no energy fields.
+The lap-deploy row is not recorded.
 
 Integers are intentional: the official SDK struct builder gives these raw integer items no
 `replayType`, and its replay interpolation map only includes items having that metadata. Packed

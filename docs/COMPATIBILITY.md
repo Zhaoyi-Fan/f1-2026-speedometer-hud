@@ -1,6 +1,8 @@
-# Compatibility and validation — version 0.9.39
+# Compatibility and validation — version 0.9.4
 
-Updated 2026-09-16. Runtime reference: CSP build 4116. Version 0.9.3 replaced the side bars with a
+Updated 2026-09-28. Runtime reference: CSP build 4116 (the native-hybrid samples: build 4169). Version
+0.9.4 adds RSS Formula Hybrid X 2026 and the seven SP Mod F1 2026 cars as native hybrids, recorded in
+the generic replay family; everything below that predates it is unchanged. Version 0.9.3 replaced the side bars with a
 battery glyph inside the dial; version 0.9.35 reads one further native field on the standard FA26,
 its deployment request, and gives that car's panel a second chip; version 0.9.36 writes the word BOOST
 inside the glyph while that command is held; version 0.9.37 stops the Pro stream dropping every frame
@@ -29,6 +31,9 @@ the earlier Pro-only build.
 | Other conventional cars, live | Native live DRS; since 0.9.39 its state is recorded under the generic family while the car reports a DRS component | Generic adapter tests; synthetic record / playback: open and closed wing, wrong slot, other families, no component, no physics, no car ID, departed car | A new in-game recording on such a car |
 | Other conventional cars, replays | DRS from the app's generic record; without one, unknown and dark | Native playback is not history on any sampled car: on the standard FA26, 278 samples whose replay data shows the wing open all reported it closed. A 0.9.38 reader leaves generic slots unread and reads the standard FA26 and FA25 slots exactly as 0.9.39 does, in both directions (one-off check against the 0.9.38 source, 102 assertions) | Playback of a 0.9.39 recording on such a car |
 | Cars without DRS | Same DRS label, always dark | Known-absent and conflicting-input tests | A game screenshot |
+| RSS Formula Hybrid X 2026 and SP Mod F1 2026, live | One badge across the row — `SM` on the RSS (its DRS opens both wings), `DRS` on the SP Mod cars (rear flap) — dark, yellow when available, green when open; the battery glyph (charge, requested share, recovery, override button); the compact panel with the car's program name and Lap deploy; no `OT` badge | Two races on a 2026 Silverstone layout (the RSS driven with nine RSS and SP Mod AI cars, then an SF-26 driven with the same mix; about 43,000 samples at 4–20 Hz from a separate read-only probe): every AI car reported every field; on steady samples the request equalled each program's throttle × speed × gear tables (every AI sample within 0.02; 97 % for the driven SF-26, the rest its own smoothing at a table cliff), and the game lowered it by itself at an empty battery; the battery rose on 77–96 % of the samples flagged as recovering and fell on 91–98 % of those with a request; the lap counter counted deployment only (about 327 kW on the RSS, 83 kW on the SP Mod cars at a full request) and restarted every lap; the RSS's DRS changed the lift of both its rear and front element; availability rose at every zone start in a race with no car within a second; both cars switch programs in the cockpit and the names match the profiles; the HUD's diagnostics showed each state (Override with the button held = magenta, recovery = red, open SM, lap `2095 / 9000`) with no Lua error | The layout on screen at several scales and in both languages; a lap that reaches the per-lap limit (the orange row), which neither car reached |
+| Native hybrids, new replays | The native-state stream's generic family, with the energy fields | In an in-session and in a file-launched replay the HUD read its own record (`replay: native app stream`) while CSP playback gave a frozen or zero battery; program names are available in replay and match the profiles; offline round trips; cross-version check (below) | A longer replay watched with the values changing |
+| Native hybrids, replays recorded by 0.9.39 | DRS only, from the generic record; the energy readings stay unknown | Cross-version check | — |
 | Mixed camera, pause, reverse seek, missing data | The current snapshot is rebuilt every update; no previous-car or future-value cache | Synthetic routing and state tests | Mixed-grid acceptance |
 | Battery glyph, Pro and standard FA26 | Body = Boost button, reading `BOOST` while it is held (the single-digit charge returns beside the word); ring and terminal = the flow of the current update (red harvest, green deploy, magenta Boost); bolt = the same hue, white on the magenta Boost body, outlined and standing at the anchored end, with the percentage beside the terminal (since 0.9.39); fill anchored to the wall opposite the terminal (on the right by default; the left-hand setting draws the mirror image, the side used before 0.9.38), amber when the displayed figure is 10 % or less; `--` without fill or bolt when the charge is invalid. Brightness comes from `|kW| / 350` on the Pro, and on the standard FA26 from the deployment request, or a fixed value while it reports recovery | Offline UI checks of every state, the 5 kW deadband and the request deadband, unknown power, invalid charge, the fill anchor, the 10 % boundary, the bolt colours and winding, the native deploy / Boost / recovery precedence, the `BOOST` word with and without the single-digit number, the two terminal sides as mirror images (twelve states at three scales compared shape by shape; the bolt moved, not flipped), the percentage beside the terminal and the bolt at the anchored end on each side, the bolt's outline, core and drawing order over the fill, and the brightness easing (raw when off or at `sim.dt` 0, decaying through idle frames, cleared by an invalid update, restarted on a car change or after undrawn updates). In 0.9.38 the left side drew exactly what 0.9.37 drew (1,536 rendered states compared draw call by draw call); the 0.9.39 placement change was compared the same way (3,072 states, both sides) and altered nothing but the bolt and the glyph's own text. A lap with the automatic gearbox showed no flicker of the Pro's ring at the upshift throttle cut. Both terminal sides were viewed in game on a Pro replay before the right-facing glyph became the default. The 0.9.39 right-facing layout was viewed in game on a Pro replay while deploying, under Boost and while harvesting; the README demo GIF is that recording | A Pro session with harvesting, deploying, Boost and super-clipping; readability of the digits, bolt and ring at other scales; the 0.9.39 left-facing layout in game; the right-facing glyph on the standard FA26 and in a live session |
 | Chinese / English, scale, panel and glyph | Pro dial and panel, compact standard-FA26 panel, plain dial for other cars; the `BOOST` badge returns when the glyph is off; the glyph on either terminal side | 144 UI combinations (both terminal sides) and drawing bounds | Actual font rendering at each scale |
@@ -60,15 +65,18 @@ and repeat with `tests/test_hud_ui.lua`. The runner uses x86 PowerShell; no DLL 
 The fixtures are synthetic. Private sampling files, commercial vehicle files, replay files, local
 backups and machine logs are excluded from the repository.
 
-- Data tests (652 checks): exact classification, callable CSP API tables, 242 / 132-byte layouts,
+- Data tests (878 checks): exact classification, callable CSP API tables, 242 / 132-byte layouts,
   codecs, partial validity, zero / false, wrong owner or slot, missing frames, dropped cars,
   recording off, replay write protection, camera changes and range limits, the deployment
   request's validation, evidence gate, round trip through the shared strategy byte and both
   cross-version directions, and the generic DRS family (recording and playback of open and closed
   wings, the DRS-only subset even over another family's bits, wrong slot, the other two families,
   cars without DRS or without an ID, unavailable physics and unreadable cars in the gap count, a
-  partial or physics-less Pro, mixed grids, departed cars and family switches that revoke validity first).
-- UI tests (15,190 checks): execute the real main Lua with a stub data adapter and a drawing
+  partial or physics-less Pro, mixed grids, departed cars and family switches that revoke validity first),
+  and the native hybrids: exact IDs and near misses, both program lists, every gate closed and open, the
+  closed-throttle floor, the per-lap limit's checks, program-contract recording, replay names taken from
+  the profile, what a 0.9.39 reader of the same slot sees, and switches through the shared generic owner.
+- UI tests (23,214 checks): execute the real main Lua with a stub data adapter and a drawing
   recorder. They validate content, geometry, scale and language combinations, partial Pro data
   and the canvas origin, the badge rows (the Pro's SM | OT pair, the standard FA26's full-width SM
   without OT, and its dark / yellow / green states at speed and at rest, with unverified flags kept
@@ -78,9 +86,16 @@ backups and machine logs are excluded from the repository.
   brightness easing and its pause behaviour), the placement of the percentage beside the terminal and
   of the bolt at the anchored end, the bolt's outline, core, vertical position and drawing order over
   the fill, the two terminal sides as shape-by-shape mirror images with the right one as default and
-  fallback, and the terminal choice in the settings window; check
+  fallback, and the terminal choice in the settings window; the native hybrids in the matrix (240
+  combinations), their two badge labels in three states, their glyph flows, the lap-deploy row and the
+  taller panel beside the unchanged standard one; check
   that the pedal arcs and recovery chip draw each update's values through an upshift cut and an
   auto-blip (three vehicle kinds, live and replay); and cover the `replayGaps` diagnostic.
+- 0.9.4 one-off checks, not part of the suites: 38 deliberate mutations of the new code were each
+  caught by the suites; 6,144 rendered states of the Pro, the standard FA26 and conventional cars (both
+  terminal sides, easing and diagnostics on and off) compared draw call by draw call with 0.9.39 are
+  identical; and the 0.9.39 and 0.9.4 readers and writers were run against each other's recordings (471
+  assertions), including byte-identical slots for every car that is not a native hybrid.
 - 0.9.39 one-off checks, not part of the suites: 20 deliberate code mutations of the new badge and
   recording logic were each caught by these tests; 1,536 rendered states compared draw call by draw
   call with 0.9.38 show the Pro and conventional dials unchanged and the standard FA26 changed only in

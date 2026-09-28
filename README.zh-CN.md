@@ -3,8 +3,9 @@
 [English](README.md)
 
 一款用于 Assetto Corsa 的 F1 转播风格车速表，围绕 VRC Formula Alpha 2026 设计。它跟随镜头车辆，只画这台车有的东西：
-FA26 Pro 显示直线模式、超车模式、Boost 和完整能量面板，普通 FA26 显示它自己的系统，常规车辆显示单个 DRS 标识。
-两款 FA26 的表盘内都有电池图标，显示电量以及 MGU-K 正在部署还是回收。
+FA26 Pro 显示直线模式、超车模式、Boost 和完整能量面板；普通 FA26、RSS Formula Hybrid X 2026 和 SP Mod 的
+F1 2026 车显示它们自己的系统；常规车辆显示单个 DRS 标识。除常规车辆外，表盘内都有电池图标，显示电量以及
+MGU-K 正在部署还是回收。
 
 每一版各改了什么见[更新日志](CHANGELOG.md)，开头有一行一版的速览表，后面是详细条目。
 已实测与待实测项见[兼容与验收记录](docs/COMPATIBILITY.md)。
@@ -25,11 +26,14 @@ FA26 Pro 显示直线模式、超车模式、Boost 和完整能量面板，普�
 | --- | --- | --- |
 | FA26 Pro，精确 ID `vrc_formula_alpha_2026_csp` | SM／OT／BOOST | 完整 Pro 面板与原有 Pro 回放流 |
 | 普通 FA26，精确 ID `vrc_formula_alpha_2026` | 占满整行的 `SM` 和 BOOST；没有 `OT` 标识（该车没有超车模式） | 电池百分比、LOW／MEDIUM／HIGH／NODEPLOY、手动 BOOST、减阻、部署请求和回收状态 |
+| RSS Formula Hybrid X 2026，精确 ID `rss_formula_hybrid_x_2026` | 占满整行的 `SM`（它的 DRS 同时打开前后翼，即该车的 X 模式）和 BOOST；没有 `OT` 标识 | 电池百分比、该车 6 个 MGU-K 档、手动覆盖、部署请求、回收状态，以及本圈已部署能量与 9 MJ 上限（仅实时） |
+| SP Mod F1 2026，精确 ID `f1_2026_amr26`、`f1_2026_mac26`、`f1_2026_mcl40`、`f1_2026_r26`、`f1_2026_rb22`、`f1_2026_sf26`、`f1_2026_w17` | 占满整行的 `DRS`（只有尾翼 DRS）和 BOOST | 同 RSS，档位为 SP 车的 7 个，上限 4 MJ |
 | FA25 等常规车辆 | 单个居中 DRS，有效开启时绿色 | 不显示 Pro 能量面板；所有带原生 DRS 的车都会补录 DRS（0.9.39 之前只有精确 FA25 CSP） |
 | 无 DRS 车辆 | 同一个 DRS 标识，始终暗置 | 无能量面板 |
 
 **车辆决定布局，赛道和规则影响可用性，实际状态决定点亮。**FA25 上 2026 赛道仍显示 DRS；
 Pro 暂时缺 CAN 数据也不会变成旧规布局。缺失状态保持暗灯或 `--`，内部与已知关闭／真实零值分开。
+RSS 和 SP Mod 的配置只认这些精确车辆 ID，取自车辆自己的数据文件；其他 RSS Formula Hybrid 或改名复制的车走常规布局。
 
 ## 显示内容
 
@@ -79,6 +83,17 @@ SM 就是这台车自带的 DRS，标识占满整行：关闭时暗色，可用�
 “正在回收”不同于 Pro 的 Charge／Anti 按键模式，也不保证每一帧电池净增加。
 不套用 Pro 的 4 MJ 容量、kW、每圈回收额度、split 或 PU 模式。
 
+**RSS Formula Hybrid X 2026 和 SP Mod 的 F1 2026 车**（原生混动车）沿用普通 FA26 的规则，只是名称按车而定。
+面板显示该车当前的 MGU-K 档名（RSS：`No deploy`、`Low`、`Balanced`、`High`、`Qualy`、`Override`；SP Mod：
+`Charging`、`Balanced low`、`Balanced high`、`Linear`、`Overtake`、`Top Speed`、`Hotlap`），并多一行**本圈部署**：
+本圈已部署能量与该车每圈上限，例如 `3.21 / 9.0 MJ`，进度条为绿色，到达上限后变橙色。这一行只在实时显示，
+回放里是 `--`。标识和普通 FA26 一样占满整行：关闭时暗色、可用时黄色、打开时绿色；RSS 显示 `SM`（它的 DRS
+同时打开后翼和前翼，车上自带仪表称为 X 模式），SP Mod 车显示 `DRS`（只有尾翼）。两者都没有超车模式：RSS 的
+`Override` 和 SP Mod 的 `Overtake` 只是部署档，override 按键就是 BOOST。外圈亮度是该车自身 MGU-K 的请求比例
+（RSS 约 346 kW，SP Mod 约 111 kW）；电池耗尽时车辆会自己降低请求，外圈随之变暗或熄灭。SF-26 和 MCL40
+还会在油门下通过 MGU-H 给电池充电，这时百分比上涨但不显示红色外圈。可用状态取决于赛道区域：在实测的 2026 布局上，
+每个区的起点都会变黄，不要求与前车的时间差。
+
 HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看对应车辆已录制的数据；也可以绑定按键，
 让 HUD 始终显示自己的车。
 
@@ -103,19 +118,20 @@ HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看
 
 - 装有 Custom Shaders Patch 的 Assetto Corsa。VRC Formula Alpha 2026 本身要求 CSP
   0.3.0-preview542 或更新版本。本应用在 build 4116 上开发和测试。
-- 完整 Pro 能量数据需要 **VRC Formula Alpha 2026 Pro**。普通 FA26 和常规 DRS 走独立接口；
-  不承诺支持其他厂商的自定义 2026 系统。
+- 完整 Pro 能量数据需要 **VRC Formula Alpha 2026 Pro**。普通 FA26、原生混动车（RSS Formula Hybrid X 2026 和
+  7 台 SP Mod F1 2026 车）和常规 DRS 走独立接口；不承诺支持其他自定义 2026 系统。
 - 应用由两个 Lua 文件和一个 manifest 组成，无需另外安装 DLL、SimHub 或 Python。
 
 ## 安装
 
-**使用发布包：**在 [v0.9.39 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.39)
-下载 `f1-2026-speedometer-hud-v0.9.39.zip`，
+**使用发布包：**在 [v0.9.4 发布页面](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.4)
+下载 `f1-2026-speedometer-hud-v0.9.4.zip`，
 解压到 Assetto Corsa 根目录（包含 `acs.exe` 的文件夹）。解压后应能找到
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`。也可以将压缩包拖入 Content Manager 安装。
 
 **更新旧版：**先退出当前游戏会话，再将新版压缩包覆盖安装到原位置，允许替换应用文件。
-现有 HUD 设置会保留。重新进入比赛或回放后，可在设置窗口确认版本为 **0.9.39**。从 0.9.39 起，普通 FA26 的 `SM`
+现有 HUD 设置会保留。重新进入比赛或回放后，可在设置窗口确认版本为 **0.9.4**。从 0.9.4 起，RSS Formula Hybrid X 2026
+和 SP Mod F1 2026 车有了自己的布局，紧凑面板更高一些。从 0.9.39 起，普通 FA26 的 `SM`
 占满标识行，也不再有 `OT` 标识，电池图标里的百分比挨着接头。从 0.9.38 起电池图标朝右，想把接头放回左边，
 在「显示 › 电池接头」里选「左」。表盘不再有两侧竖条，
 窗口对所有车型都是 340 个单位宽（加面板）；之前开着竖条时 Pro 宽 98、普通 FA26 宽 62 个单位，
@@ -152,6 +168,11 @@ HUD 默认跟随**镜头中的车辆**。看回放时切换车辆，就能查看
 
 0.9.39 在同一布局里为这些车新增了一个车型族编号。更早的版本不认识这个编号，会跳过这些车位，所以 0.9.39
 录的回放在 0.9.38 里打开时，这些车的 DRS 显示为不可用；普通 FA26 和 FA25 的车位在两个方向上都照旧还原。
+
+0.9.4 让 RSS Formula Hybrid X 2026 和 SP Mod F1 2026 车继续使用这个车型族编号，并在同一条记录里加入电池、
+BOOST、档位、回收和部署请求，同样不改变布局。0.9.39 仍能读出这些车录下的 DRS，其余字段不读；0.9.39 录的回放
+在 0.9.4 里打开时，这些车只有 DRS，能量读数保持未知。本圈部署那一行不录。CSP 自己的回放不会给出这些车的
+能量或 DRS 历史。
 
 0.9.35 把普通 FA26 的部署请求也写进了这条流，但没有改变它的体积和布局：请求放在原本只记录档位索引
 那一字节的四个空闲位里。早期版本录制的回放照旧完整还原；0.9.35 录制的回放在早期版本里打开时，
@@ -214,16 +235,17 @@ PL / PLP、直线模式预锁与激活）来自 VRC 赛车的遥测总线，通�
 ## 限制与计划
 
 - 回放最多记录 22 辆车，即车辆索引 0–21；索引 22 及之后的车辆不会录制。
-- 普通 FA26 功能少于 Pro，使用独立的数据语义；不承诺其他厂商自定义 2026 mod 或线上远程车同等覆盖。
+- 普通 FA26 和原生混动车功能少于 Pro，使用各自的数据语义；不承诺其他自定义 2026 mod 或线上远程车同等覆盖。
 - 0.9.2 适配器上的 Pro 实时会话（含 AI 车）、混合镜头和实际字体效果仍需游戏内验收；当前完成项及待测项见
   [COMPATIBILITY.md](docs/COMPATIBILITY.md)，离线测试不能代替游戏实测。
 
 ## 致谢与声明
 
 - 车辆、物理和遥测总线：[VRC Modding Team](https://www.virtual-racing-cars.com/) 的 Formula Alpha 2026。
+- 原生混动配置：取自 Race Sim Studio 的 Formula Hybrid X 2026 和 SP Mod 的 F1 2026 车辆数据，不包含它们的任何文件。
 - 表盘布局和配色参考社区的 MultiViewer 风格速度表，未使用这些应用的素材。
 - 运行于 [Custom Shaders Patch](https://acstuff.club/patch/)。
-- 与 Formula One、FIA、Kunos、VRC 均无关联，"F1" 仅作描述性使用。
+- 与 Formula One、FIA、Kunos、VRC、Race Sim Studio、SP Mod 均无关联，"F1" 仅作描述性使用。
 
 ## 许可证
 
