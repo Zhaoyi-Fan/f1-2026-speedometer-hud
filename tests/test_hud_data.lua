@@ -533,6 +533,216 @@ observeWrite = function(r, key, i)
 end
 channel('rearMotorPowerKW', nil); observed.recordAll(); observeWrite = nil
 equal(observed.RS.f26flags[0], 0, 'real partial Pro snapshot still clears old stream slot')
+
+-- Native hybrids (RSS FHX 2026, SP Mod 2026): exact-ID profiles over the standard FA26's native fields.
+local RSS, SF = 'rss_formula_hybrid_x_2026', 'f1_2026_sf26'
+local SP_IDS = { 'f1_2026_amr26', 'f1_2026_mac26', 'f1_2026_mcl40', 'f1_2026_r26', 'f1_2026_rb22', 'f1_2026_sf26',
+  'f1_2026_w17' }
+local RSS_MAPS = { 'No deploy', 'Low', 'Balanced', 'High', 'Qualy', 'Override' }
+local SP_MAPS = { 'Charging', 'Balanced low', 'Balanced high', 'Linear', 'Overtake', 'Top Speed', 'Hotlap' }
+check(not D.validation.hybridAero and not D.validation.hybridRecovery and not D.validation.hybridDeploy
+  and not D.validation.hybridLapEnergy, 'hybrid evidence gates stay closed until the cars are observed in game')
+equal(data.classify(RSS), 'hybrid', 'RSS FHX 2026 is a native hybrid')
+for _, id in ipairs(SP_IDS) do equal(data.classify(id), 'hybrid', 'SP Mod car is a native hybrid: ' .. id) end
+for _, id in ipairs({ 'rss_formula_hybrid_x', 'rss_formula_hybrid_x_evo', 'rss_formula_hybrid_2021', 'f1_2026_w18',
+  'f1_2026_sf26_v2', 'F1_2026_SF26', 'rss_formula_hybrid_x_2026 ', '' }) do
+  equal(data.classify(id), 'drs', 'only exact profile IDs are hybrids: ' .. id)
+end
+equal(D.HYBRIDS[RSS].aero, 'sm', 'RSS moves both wings'); equal(D.HYBRIDS[SF].aero, 'drs', 'SP Mod moves the rear flap')
+for k, name in ipairs(RSS_MAPS) do equal(D.HYBRIDS[RSS].maps[k], name, 'RSS program ' .. k) end
+for _, id in ipairs(SP_IDS) do
+  for k, name in ipairs(SP_MAPS) do equal(D.HYBRIDS[id].maps[k], name, id .. ' program ' .. k) end
+  equal(#D.HYBRIDS[id].maps, 7, id .. ' has seven programs')
+end
+equal(#D.HYBRIDS[RSS].maps, 6, 'RSS has six programs')
+
+acStub.getMGUKDeliveryName = function(i, p)
+  if observeNativeRead then observeNativeRead() end
+  local profile = D.HYBRIDS[ids[i]]
+  if profile then return profile.maps[p + 1] end
+  return names[p + 1]
+end
+local function hybridCar(i, id)
+  local h = car(i, id)
+  h.mgukDeliveryCount, h.mgukDelivery = #D.HYBRIDS[id].maps, 2
+  h.kersMaxKJ, h.kersCurrentKJ, h.kersInput, h.kersCharging = 9000, 3210.5, 0.285, false
+  return h
+end
+cfg.recordReplay, sim.isReplayActive, sim.carsCount = true, false, 1
+local H = D.new(acStub, sim, cfg)
+-- H's buffers are the observing proxies above, whose values live behind __index: copy them slot by slot.
+local function cloneSlots(r)
+  local copy = {}
+  for key, array in pairs(r) do copy[key] = {}; for i = 0, 21 do copy[key][i] = array[i] end end
+  return copy
+end
+local loadsBefore = #loads
+c = hybridCar(0, RSS)
+check(H.readLive(S, 0), 'hybrid live read')
+equal(S.kind, 'hybrid', 'hybrid layout'); equal(S.aero, 'sm', 'the profile names the aero mode')
+equal(#loads, loadsBefore, 'a hybrid never connects the Pro bus'); equal(S.full, false, 'a hybrid is not a full Pro')
+equal(S.soc, 0.4, 'hybrid battery'); equal(S.boost, false, 'hybrid manual button'); equal(S.valid.boost, true, 'a valid false button')
+equal(S.strategyName, 'Balanced', 'RSS program name'); equal(S.strat, 3, 'program number is 1-based')
+equal(S.deployInput, nil, 'closed deploy gate'); equal(S.recovering, nil, 'closed recovery gate')
+equal(S.lapUsedKJ, nil, 'closed lap-energy gate'); equal(S.smActive, nil, 'closed aero gate')
+equal(S.candidate.recovering, false, 'recovery candidate kept'); equal(S.candidate.kersPresent, true, 'KERS candidate kept')
+equal(S.otActive, false, 'no Overtake Mode'); equal(S.supported.otActive, false, 'OT unsupported')
+equal(S.valid.otActive, false, 'unsupported OT is not a recorded false')
+equal(S.drsActive, false, 'native DRS read'); equal(S.valid.drsActive, true, 'native DRS valid')
+equal(S.source, 'live: native hybrid', 'hybrid source'); equal(S.wingF, nil, 'a hybrid ignores extra switch H')
+-- the standard FA26's gates never open a hybrid field
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = true, true, true
+c.drsAvailable, c.drsActive, c.kersCharging = true, true, true
+H.readLive(S, 0)
+equal(S.smActive, nil, 'vanilla SM gate does not open hybrid SM'); equal(S.recovering, nil, 'nor recovery')
+equal(S.deployInput, nil, 'nor deployment')
+D.validation.vanillaSM, D.validation.vanillaRecovery, D.validation.vanillaDeploy = false, false, false
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = true, true, true, true
+H.readLive(S, 0)
+equal(S.smActive, true, 'both-wing DRS open = SM open'); equal(S.smAvailable, true, 'and available')
+equal(S.recovering, true, 'hybrid recovery'); equal(S.deployInput, 0.285, 'hybrid deployment share')
+equal(S.lapUsedKJ, 3210.5, 'energy deployed this lap'); equal(S.lapCapKJ, 9000, 'per-lap limit')
+-- per-lap limit: only a real limit, and a real count
+c.kersMaxKJ = 99999; H.readLive(S, 0)
+equal(S.valid.lapCapKJ, false, 'a declared 99999 kJ is no limit'); equal(S.valid.lapUsedKJ, false, 'so no lap row')
+c.kersMaxKJ = 0; H.readLive(S, 0); equal(S.valid.lapCapKJ, false, 'a zero limit is not a limit')
+c.kersMaxKJ, c.kersCurrentKJ = 4000, -1; H.readLive(S, 0); equal(S.valid.lapUsedKJ, false, 'a negative count is rejected')
+c.kersCurrentKJ = 0 / 0; H.readLive(S, 0); equal(S.valid.lapCapKJ, false, 'NaN count rejects the pair')
+c.kersCurrentKJ = nil; H.readLive(S, 0); equal(S.lapUsedKJ, nil, 'a missing count is not zero')
+c.kersCurrentKJ = 0; H.readLive(S, 0); equal(S.lapUsedKJ, 0, 'a real zero at the line'); equal(S.valid.lapUsedKJ, true, 'is valid')
+c.kersCurrentKJ = 4100; H.readLive(S, 0); equal(S.lapUsedKJ, 4100, 'a count past the limit is kept as reported')
+c.kersCurrentKJ, c.kersMaxKJ = 3210.5, 9000
+-- delivery request: the car's own closed-throttle offset reads as no request, nothing else is reinterpreted
+c.kersInput = -1e-12; H.readLive(S, 0); equal(S.deployInput, 0, 'float noise below zero is a zero request')
+c.kersInput = -0.004; H.readLive(S, 0); equal(S.valid.deployInput, false, 'RSS tables never go negative: rejected')
+c.kersInput = 1; H.readLive(S, 0); equal(S.deployInput, 1, 'a full request')
+c.kersInput = 1.01; H.readLive(S, 0); equal(S.valid.deployInput, false, 'above one rejected')
+c.kersInput = nil; H.readLive(S, 0); equal(S.deployInput, nil, 'a missing request is not zero')
+c = hybridCar(0, SF)
+c.kersInput = -0.004; H.readLive(S, 0)
+equal(S.deployInput, 0, 'SP closed-throttle offset is no request'); equal(S.valid.deployInput, true, 'and a valid zero')
+c.kersInput = -0.01; H.readLive(S, 0); equal(S.deployInput, 0, 'down to the profile floor')
+c.kersInput = -0.02; H.readLive(S, 0); equal(S.valid.deployInput, false, 'below the floor rejected')
+c.kersInput = 0.5; H.readLive(S, 0); equal(S.deployInput, 0.5, 'SP share')
+-- rear-flap profile: DRS stays DRS, whatever the aero gate says
+c.drsAvailable, c.drsActive = true, true; H.readLive(S, 0)
+equal(S.aero, 'drs', 'SP aero'); equal(S.smActive, nil, 'a rear flap is never Straight Mode')
+equal(S.valid.smAvailable, false, 'no SM availability either'); equal(S.drsActive, true, 'its DRS is read')
+equal(S.strategyName, 'Balanced high', 'SP program name at index 2')
+c.mgukDelivery = 7; H.readLive(S, 0); equal(S.strategyName, nil, 'an index past the program count is rejected')
+c.mgukDelivery, c.mgukDeliveryCount = 0, nil; H.readLive(S, 0); equal(S.strategyName, nil, 'no count, no program')
+c.mgukDeliveryCount = 7
+c.physicsAvailable = false; H.readLive(S, 0)
+equal(S.soc, nil, 'remote hybrid: no battery'); equal(S.boost, nil, 'no borrowed button'); equal(S.lapUsedKJ, nil, 'no lap row')
+equal(S.source, 'live: native hybrid, physics unavailable', 'the source says why')
+c.physicsAvailable = true
+
+-- Recording: the generic family, now with the energy fields.
+c = hybridCar(0, RSS)
+c.kersButtonPressed, c.kersCharging, c.drsAvailable, c.drsActive, c.mgukDelivery, c.kersInput = true, true, true, false, 5, 1
+equal(H.recordAll(), 1, 'a hybrid is recorded'); equal(H.recordedHybrid, 1, 'and counted as a hybrid')
+equal(H.recordedDRS, 0, 'not as a conventional car'); equal(H.recordedVanilla, 0, 'nor as a standard FA26')
+equal(H.VRS.f26n1owner[0], 0xA001, 'a hybrid keeps the generic family')
+equal(H.VRS.f26n1valid[0], 127, 'all seven native fields valid')
+equal(H.VRS.f26n1state[0], 1 + 2 + 4 + 8, 'Boost, recovery, DRS present and available; closed')
+equal(H.VRS.f26n1soc[0], 100, 'battery x 250')
+equal(H.VRS.f26n1strategy[0], 5 + 15 * 16, 'program index and full share in one byte')
+local hybridRecord = cloneSlots(H.VRS)
+equal(hybridRecord.f26n1owner[0], 0xA001, 'the saved record really holds the slot')
+sim.isReplayActive = true
+c.kersCharge, c.kersButtonPressed, c.kersCharging, c.drsAvailable, c.mgukDelivery = 0.9, false, false, false, 0
+H.readReplay(S, 0)
+equal(S.kind, 'hybrid', 'hybrid replay layout'); equal(S.soc, 0.4, 'recorded battery outranks playback')
+equal(S.boost, true, 'recorded button'); equal(S.recovering, true, 'recorded recovery')
+equal(S.strategyName, 'Override', 'recorded index named from the profile'); equal(S.strat, 6, 'program number')
+equal(S.deployInput, 1, 'recorded share'); equal(S.drsAvailable, true, 'recorded availability'); equal(S.drsActive, false, 'recorded closed')
+equal(S.smAvailable, true, 'SM from the record'); equal(S.smActive, false, 'a recorded closed wing')
+equal(S.lapUsedKJ, nil, 'the lap row is live only'); equal(S.supported.soc, true, 'battery supported in replay')
+equal(S.source, 'replay: native app stream, car 0', 'hybrid replay source')
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy = false, false, false
+H.readReplay(S, 0)
+equal(S.smActive, nil, 'closed aero gate in replay'); equal(S.recovering, nil, 'closed recovery gate in replay')
+equal(S.deployInput, nil, 'closed deploy gate in replay'); equal(S.strategyName, 'Override', 'the program is not gated')
+equal(S.soc, 0.4, 'nor the battery')
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy = true, true, true
+-- What a 0.9.39 reader sees: its generic-car path takes only the DRS subset of the same slot.
+ids[0] = 'another_drs_car'; H.readReplay(S, 0)
+equal(S.kind, 'drs', 'a conventional reader of the slot'); equal(S.drsAvailable, true, 'still gets the DRS')
+equal(S.soc, nil, 'but never a battery'); equal(S.boost, nil, 'nor a button'); equal(S.recovering, nil, 'nor recovery')
+equal(S.strategyName, nil, 'nor a program'); equal(S.deployInput, nil, 'nor a share')
+ids[0] = VAN; H.readReplay(S, 0); equal(S.soc, nil, 'a standard FA26 never reads a generic slot')
+ids[0] = SF; H.readReplay(S, 0)
+equal(S.strategyName, 'Top Speed', 'the same index names the SP profile program')
+H.VRS.f26n1strategy[0] = 9 + 15 * 16; H.readReplay(S, 0)
+equal(S.strategyName, nil, 'an index past the SP programs is rejected'); equal(S.deployInput, 1, 'the share survives')
+ids[0] = RSS; H.VRS.f26n1strategy[0] = 6 + 3 * 16; H.readReplay(S, 0)
+equal(S.strategyName, nil, 'RSS has no seventh program'); equal(S.deployInput, 2 / 14, 'the share still reads')
+restore(H.VRS, hybridRecord); H.VRS.f26n1owner[0] = 0xA002; H.readReplay(S, 0)
+equal(S.soc, nil, 'a hybrid record for another slot is rejected')
+equal(S.source, 'replay: native hybrid history unavailable', 'and the source says so')
+restore(H.VRS, hybridRecord); H.VRS.f26n1owner[0] = 0; H.readReplay(S, 0)
+equal(S.drsActive, nil, 'an unrecorded frame stays unknown'); equal(S.soc, nil, 'battery unknown')
+restore(H.VRS, hybridRecord); H.VRS.f26n1valid[0] = 16 + 32 + 64; H.readReplay(S, 0)
+equal(S.drsAvailable, true, 'a DRS-only hybrid record (0.9.39 writer) still reads its DRS')
+equal(S.soc, nil, 'and leaves the battery unknown'); equal(S.strategyName, nil, 'and the program')
+sim.isReplayActive = false
+-- A program name the profile does not know shows live but is never recorded.
+acStub.getMGUKDeliveryName = function(i, p) return (p == 5 and 'Override*') or D.HYBRIDS[RSS].maps[p + 1] end
+c = hybridCar(0, RSS); c.mgukDelivery = 5
+H.readLive(S, 0); equal(S.strategyName, 'Override*', 'a renamed program still displays live')
+H.recordAll(); equal(H.VRS.f26n1valid[0] % 8 >= 4, false, 'but is not recorded under the profile contract')
+acStub.getMGUKDeliveryName = function(i, p)
+  local profile = D.HYBRIDS[ids[i]]
+  if profile then return profile.maps[p + 1] end
+  return names[p + 1]
+end
+-- A hybrid without a DRS component still records its energy system; physics loss is a counted gap.
+c = hybridCar(0, SF); c.drsPresent = false
+local hybridGaps = H.recordingGaps.totalNativeEmpty
+equal(H.recordAll(), 1, 'a hybrid without DRS is recorded')
+equal(H.VRS.f26n1valid[0] % 16, 15, 'battery, button, program and recovery')
+equal(math.floor(H.VRS.f26n1state[0] / 4) % 8, 0, 'no DRS state bits')
+c.physicsAvailable = false
+equal(H.recordAll(), 0, 'no physics, no record')
+equal(H.recordingGaps.totalNativeEmpty, hybridGaps + 1, 'a hybrid without physics is a counted gap')
+equal(H.recordingGaps.lastNativeReason, 'physics unavailable', 'with the reason')
+c.kersPresent, c.drsPresent = false, false
+H.readLive(S, 0); equal(S.candidate.kersPresent, false, 'candidate reflects the missing KERS')
+H.recordAll(); equal(H.recordingGaps.totalNativeEmpty, hybridGaps + 1, 'a hybrid reporting neither system is not a gap')
+-- Mixed grid counting.
+sim.carsCount = 5
+car(0, VAN); hybridCar(1, RSS); hybridCar(2, SF); car(3, FA25); car(4, 'another_drs_car')
+equal(H.recordAll(), 5, 'mixed grid with hybrids')
+equal(H.recordedVanilla, 1, 'one standard FA26'); equal(H.recordedHybrid, 2, 'two hybrids'); equal(H.recordedDRS, 2, 'FA25 and a generic car')
+equal(H.VRS.f26n1owner[1], 0xA002, 'RSS in slot 1'); equal(H.VRS.f26n1owner[2], 0xA003, 'SP in slot 2')
+equal(H.VRS.f26n1valid[4], 16 + 32 + 64, 'the conventional generic car still records only DRS')
+sim.carsCount = 1; for k = 1, 4 do frames[k] = nil end; H.recordAll()
+
+-- Family switches through the shared generic owner: a hybrid handing its slot to a conventional car
+-- revokes the energy fields before their payload is cleared; the other way round needs no revocation.
+local HO = D.new(acStub, sim, cfg)
+c = hybridCar(0, RSS)
+equal(HO.recordAll(), 1, 'prime the observed hybrid slot')
+local sawHybridRevocation = false
+observeWrite = function(r, key, i)
+  if r == HO.VRS and i == 0 then
+    if key == 'f26n1valid' and r.f26n1valid[0] == 16 + 32 + 64 then sawHybridRevocation = true end
+    if key == 'f26n1soc' then check(sawHybridRevocation, 'energy validity revoked before the battery payload') end
+  end
+end
+car(0, 'another_drs_car'); HO.recordAll(); observeWrite = nil
+check(sawHybridRevocation, 'hybrid to conventional revokes first')
+equal(HO.VRS.f26n1valid[0], 16 + 32 + 64, 'the conventional car keeps only DRS'); equal(HO.VRS.f26n1soc[0], 0, 'battery payload cleared')
+observeWrite = function(r, key, i)
+  if r == HO.VRS and i == 0 then
+    check(r.f26n1owner[0] == 0xA001, 'conventional to hybrid never publishes an empty owner')
+    local v = r.f26n1valid[0]
+    check(v == 16 + 32 + 64 or v == 127, 'and only ever shows the old DRS subset or the new full mask')
+  end
+end
+c = hybridCar(0, SF); HO.recordAll(); observeWrite = nil
+equal(HO.VRS.f26n1valid[0], 127, 'the hybrid adds its energy fields')
+D.validation.hybridAero, D.validation.hybridRecovery, D.validation.hybridDeploy, D.validation.hybridLapEnergy = false, false, false, false
 local result = 'PASS: hud_data (' .. checks .. ' checks; synthetic adapter/replay contracts, not in-game validation)'
 print(result)
 return result

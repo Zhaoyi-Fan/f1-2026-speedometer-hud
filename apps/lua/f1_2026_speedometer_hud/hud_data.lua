@@ -5,11 +5,32 @@ local PRO_ID, VANILLA_ID = 'vrc_formula_alpha_2026_csp', 'vrc_formula_alpha_2026
 local FA25_ID = 'vrc_formula_alpha_2025_csp'
 local MAX_CARS, PRO_DIVISOR, NATIVE_DIVISOR = 22, 2, 1
 local STRATEGIES = { 'LOW', 'MEDIUM', 'HIGH', 'NODEPLOY' }
+-- Native hybrids: cars whose energy system is AC's own ERS and whose aero mode is AC's own DRS component,
+-- read through the same native fields as the standard FA26. Each profile is exact to one car ID and was
+-- taken from that car's data files (2026-09-28):
+--   aero        what the DRS component moves: 'sm' = both wings, a Straight Mode; 'drs' = the rear flap
+--   maps        the MGU-K delivery programs, index 0 first: the contract a recorded program index is
+--               trusted against, and the names a replay shows
+--   inputFloor  how far below zero the car's own delivery tables can take kersInput with the throttle
+--               closed (SP Mod's throttle tables start at -0.005): such a value is a zero request, and
+--               anything lower is rejected
+local SP_MOD_2026 = { aero = 'drs', inputFloor = -0.01,
+  maps = { 'Charging', 'Balanced low', 'Balanced high', 'Linear', 'Overtake', 'Top Speed', 'Hotlap' } }
+local HYBRIDS = {
+  rss_formula_hybrid_x_2026 = { aero = 'sm', inputFloor = 0,
+    maps = { 'No deploy', 'Low', 'Balanced', 'High', 'Qualy', 'Override' } },
+  f1_2026_amr26 = SP_MOD_2026, f1_2026_mac26 = SP_MOD_2026, f1_2026_mcl40 = SP_MOD_2026,
+  f1_2026_r26 = SP_MOD_2026, f1_2026_rb22 = SP_MOD_2026, f1_2026_sf26 = SP_MOD_2026,
+  f1_2026_w17 = SP_MOD_2026,
+}
+M.HYBRIDS = HYBRIDS
+-- A per-lap deployment limit above this is a car without one (the standard FA26 declares 99999 kJ).
+local LAP_CAP_MAX_KJ = 50000
 local VALID_FIELDS = { 'soc', 'boost', 'strategy', 'strategyName', 'strat', 'recovering',
   'deployInput', 'drsPresent', 'drsAvailable', 'drsActive', 'smActive', 'smAvailable',
   'wingF', 'wingR', 'esoc', 'kw', 'deploy', 'regen', 'regenLimit', 'cap', 'split', 'puMode',
   'latch', 'otActive', 'otPending', 'charge', 'pl', 'plp', 'engineRunning', 'pitLimiter',
-  'speed', 'rpm', 'gear', 'gas', 'brake' }
+  'lapUsedKJ', 'lapCapKJ', 'speed', 'rpm', 'gear', 'gas', 'brake' }
 local BASIC_FIELDS = { speed = 'speedKmh', rpm = 'rpm', gear = 'gear', gas = 'gas', brake = 'brake' }
 local DRS_FIELDS = { 'drsPresent', 'drsAvailable', 'drsActive' }
 local PRO_FLAG_MASKS = { otActive = 1, otPending = 2, boost = 4, charge = 8, pl = 16,
@@ -28,8 +49,15 @@ local LATCH_HIGH = 8192   -- bit 13, free since v0.9.1: the Straight Mode latch'
 -- produce from throttle and speed. It is a requested share of the car's deployment, never a
 -- measured power, and only values inside 0..1 are accepted. The diagnostics line reports it
 -- beside the battery level so live samples can be compared against the charge they consume.
+-- Native hybrids have their own gates, opened only by observations made on those cars:
+--   hybridAero       an 'sm' profile's DRS moves both wings in game, so it is shown as Straight Mode
+--   hybridRecovery   kersCharging coincides with the battery rising
+--   hybridDeploy     kersInput follows the selected program's throttle x speed x gear request and the
+--                    battery falls while it is positive
+--   hybridLapEnergy  kersCurrentKJ counts the energy deployed this lap against kersMaxKJ, resetting at the line
 M.validation = { vanillaSM = true, vanillaRecovery = true, vanillaDeploy = true,
-  legacyReplayDRS = false }
+  legacyReplayDRS = false, hybridAero = false, hybridRecovery = false, hybridDeploy = false,
+  hybridLapEnergy = false }
 
 local function finite(v)
   return type(v) == 'number' and v == v and v > -math.huge and v < math.huge
@@ -80,9 +108,25 @@ end
 local function classify(id)
   if id == PRO_ID then return 'pro' end
   if id == VANILLA_ID then return 'vanilla' end
+  if id ~= nil and HYBRIDS[id] then return 'hybrid' end
   return 'drs'
 end
 M.classify = classify
+-- The program name a recorded index must match: the standard FA26's four, or the hybrid profile's own list.
+local function contractName(kind, id, index)
+  if not integer(index, 0, 15) then return nil end
+  if kind == 'vanilla' then return STRATEGIES[index + 1] end
+  if kind == 'hybrid' then return HYBRIDS[id].maps[index + 1] end
+  return nil
+end
+-- A native hybrid's delivery request: its own closed-throttle offset reads as no request; anything else
+-- outside 0..1 is rejected, never reinterpreted.
+local function hybridShare(value, floor)
+  if not finite(value) or value > 1 then return nil end
+  if value >= 0 then return value end
+  if value >= (floor or 0) - 1e-9 then return 0 end
+  return nil
+end
 
 local PRO_NUMBERS = {
   esoc = 'kersChargeESOC', kw = 'rearMotorPowerKW', deploy = 'kersDeployMJ',
@@ -116,7 +160,9 @@ local NATIVE_STATE_BITS = { boost = 1, recovering = 2, drsPresent = 4,
 -- the exact FA25 CSP keep their own families. Since 0.9.39 every other car records its DRS subset under
 -- the generic family, and only while it reports a DRS component (the Pro's adapter never reads native
 -- DRS, so a Pro never qualifies); readers older than 0.9.39 know no generic family and leave those
--- slots unread.
+-- slots unread. A native hybrid stays in the generic family and adds its energy fields to the same
+-- slot (0.9.4x): a 0.9.39 reader takes only the DRS bits from a generic slot, so it keeps showing the
+-- recorded DRS of these cars, and the car ID already tells a newer reader which profile applies.
 local GENERIC_BASE = 0xA000
 local function ownerBase(id)
   if id == VANILLA_ID then return 0xA600 end
@@ -124,18 +170,20 @@ local function ownerBase(id)
   if type(id) == 'string' and id ~= '' then return GENERIC_BASE end
 end
 -- Slots that should hold a native record: the two named families always, a generic car only while its
--- snapshot shows a DRS component. The raw candidate is used, so a car whose physics is unavailable still
--- counts; a car that could not be read at all has an empty snapshot and never qualifies.
+-- snapshot shows a DRS component, a native hybrid also while it shows its energy system. The raw
+-- candidate is used, so a car whose physics is unavailable still counts; a car that could not be read at
+-- all has an empty snapshot and never qualifies.
 local function expectsNative(S, id)
   local base = ownerBase(id)
   if base ~= GENERIC_BASE then return base ~= nil end
-  return S.candidate ~= nil and S.candidate.drsPresent == true
+  if S.candidate == nil then return false end
+  return S.candidate.drsPresent == true or (HYBRIDS[id] ~= nil and S.candidate.kersPresent == true)
 end
 
 function M.new(ac, sim, cfg)
   local data = { classify = classify, MAX_CARS = MAX_CARS, REPLAY_DIVISOR = PRO_DIVISOR,
     NATIVE_DIVISOR = NATIVE_DIVISOR, NATIVE_BYTES = MAX_CARS * 6,
-    validation = M.validation, recordedPro = 0, recordedVanilla = 0, recordedDRS = 0,
+    validation = M.validation, recordedPro = 0, recordedVanilla = 0, recordedDRS = 0, recordedHybrid = 0,
     recordingGaps = { totalNativeEmpty = 0, lastNativeReason = 'none', lastNativeIndex = -1,
       totalProEmpty = 0, lastProReason = 'none', lastProIndex = -1 } }
   local can = { inputs = nil, carID = nil, count = 0, lastTry = -10, err = nil }
@@ -192,6 +240,7 @@ function M.new(ac, sim, cfg)
     if actualIndex ~= nil and actualIndex ~= idx then S.source = 'car index mismatch'; return nil end
     S.index, S.carID = idx, call(ac.getCarID, idx)
     S.kind, S.fa26 = classify(S.carID), S.carID == PRO_ID or S.carID == VANILLA_ID
+    if S.kind == 'hybrid' then S.aero = HYBRIDS[S.carID].aero end
     S.name = call(ac.getDriverName, idx) or ''
     for key, native in pairs(BASIC_FIELDS) do put(S, key, number(get(car, native))) end
     S.physicsAvailable = boolean(get(car, 'physicsAvailable'))
@@ -224,6 +273,60 @@ function M.new(ac, sim, cfg)
       put(S, 'smAvailable', S.drsAvailable)
     end
   end
+  -- A native hybrid has no Overtake Mode either. Its DRS is shown as Straight Mode only when the profile
+  -- says the component moves both wings and that was seen in game; a rear-flap profile keeps its DRS fields.
+  local function hybridSemantics(S)
+    S.supported.otActive, S.supported.otPending = false, false
+    S.otActive, S.otPending = false, false
+    if S.aero == 'sm' and M.validation.hybridAero then
+      put(S, 'smActive', S.drsActive)
+      put(S, 'smAvailable', S.drsAvailable)
+    end
+  end
+
+  -- AC's own ERS, as the standard FA26 and the native hybrids expose it. Only the evidence gates and the
+  -- hybrids' extra fields differ between the two.
+  local function readNativeEnergy(S, car, idx)
+    local hybrid = S.kind == 'hybrid'
+    local profile = hybrid and HYBRIDS[S.carID] or nil
+    S.candidate.recovering = boolean(get(car, 'kersCharging'))
+    if hybrid then S.candidate.kersPresent = boolean(get(car, 'kersPresent')) end
+    if S.physicsAvailable ~= true then return end
+    S.supported.soc = boolean(get(car, 'kersPresent'))
+    S.supported.boost = boolean(get(car, 'kersHasButtonOverride'))
+    if S.supported.soc == true then
+      put(S, 'soc', number(get(car, 'kersCharge'), 0, 1))
+      if (hybrid and M.validation.hybridRecovery) or (not hybrid and M.validation.vanillaRecovery) then
+        put(S, 'recovering', S.candidate.recovering)
+      end
+      -- Deployment share requested by the car's delivery controller, not a measured power.
+      if hybrid then
+        if M.validation.hybridDeploy then
+          put(S, 'deployInput', hybridShare(get(car, 'kersInput'), profile.inputFloor))
+        end
+      elseif M.validation.vanillaDeploy then
+        put(S, 'deployInput', number(get(car, 'kersInput'), 0, 1))
+      end
+      -- The energy deployed this lap against the car's per-lap limit; a car without a limit has none.
+      if hybrid and M.validation.hybridLapEnergy then
+        local cap = number(get(car, 'kersMaxKJ'), 1, LAP_CAP_MAX_KJ)
+        local used = number(get(car, 'kersCurrentKJ'), 0)
+        if cap and used then put(S, 'lapCapKJ', cap); put(S, 'lapUsedKJ', used) end
+      end
+    end
+    if S.supported.soc == true and S.supported.boost == true then
+      put(S, 'boost', boolean(get(car, 'kersButtonPressed')))
+    end
+    local count = integer(get(car, 'mgukDeliveryCount'), 1, 256)
+    local strategy = integer(get(car, 'mgukDelivery'), 0, count and count - 1 or -1)
+    if strategy ~= nil then
+      local name = call(ac.getMGUKDeliveryName, idx, strategy)
+      if type(name) == 'string' and name ~= '' then
+        put(S, 'strat', strategy + 1); put(S, 'strategy', strategy)
+        put(S, 'strategyName', name)
+      end
+    end
+  end
 
   function data.readLive(S, idx)
     local car = base(S, idx)
@@ -235,33 +338,16 @@ function M.new(ac, sim, cfg)
     end
     if S.kind == 'vanilla' then
       nativeDRS(S, car, S.physicsAvailable == true)
-      S.candidate.recovering = boolean(get(car, 'kersCharging'))
-      if S.physicsAvailable == true then
-        S.supported.soc = boolean(get(car, 'kersPresent'))
-        S.supported.boost = boolean(get(car, 'kersHasButtonOverride'))
-        if S.supported.soc == true then
-          put(S, 'soc', number(get(car, 'kersCharge'), 0, 1))
-          if M.validation.vanillaRecovery then put(S, 'recovering', S.candidate.recovering) end
-          -- Deployment share requested by the car's delivery controller, not a measured power.
-          if M.validation.vanillaDeploy then
-            put(S, 'deployInput', number(get(car, 'kersInput'), 0, 1))
-          end
-        end
-        if S.supported.soc == true and S.supported.boost == true then
-          put(S, 'boost', boolean(get(car, 'kersButtonPressed')))
-        end
-        local count = integer(get(car, 'mgukDeliveryCount'), 1, 256)
-        local strategy = integer(get(car, 'mgukDelivery'), 0, count and count - 1 or -1)
-        if strategy ~= nil then
-          local name = call(ac.getMGUKDeliveryName, idx, strategy)
-          if type(name) == 'string' and name ~= '' then
-            put(S, 'strat', strategy + 1); put(S, 'strategy', strategy)
-            put(S, 'strategyName', name)
-          end
-        end
-      end
+      readNativeEnergy(S, car, idx)
       vanillaSemantics(S)
       S.source = 'live: native FA26'
+      return true
+    end
+    if S.kind == 'hybrid' then
+      nativeDRS(S, car, S.physicsAvailable == true)
+      readNativeEnergy(S, car, idx)
+      hybridSemantics(S)
+      S.source = S.physicsAvailable == true and 'live: native hybrid' or 'live: native hybrid, physics unavailable'
       return true
     end
     S.source = 'live: waiting for Pro CAN'
@@ -360,16 +446,18 @@ function M.new(ac, sim, cfg)
   end
   local function recordNative(S, i)
     local base = ownerBase(S.carID)
-    -- A generic car holds nothing worth keeping without a DRS component.
-    if base == GENERIC_BASE and S.drsPresent ~= true then return false end
+    -- A generic car holds nothing worth keeping without a DRS component; a native hybrid still has its
+    -- energy system.
+    if base == GENERIC_BASE and S.drsPresent ~= true and S.kind ~= 'hybrid' then return false end
     local r, valid, state = data.VRS, 0, 0
     for field, mask in pairs(NATIVE_BITS) do
       local trusted = S.valid[field] == true
       if S.kind == 'vanilla' and (field == 'drsActive' or field == 'drsAvailable')
           and not M.validation.vanillaSM then trusted = false end
       if field == 'strategy' then
-        -- Index alone is not a stable meaning; record only the verified four-name contract.
-        trusted = trusted and STRATEGIES[S.strategy + 1] == S.strategyName
+        -- Index alone is not a stable meaning; record only a name from the car's verified contract:
+        -- the standard FA26's four, or the hybrid profile's own list.
+        trusted = trusted and contractName(S.kind, S.carID, S.strategy) == S.strategyName
       end
       if trusted then
         valid = valid + mask
@@ -382,8 +470,9 @@ function M.new(ac, sim, cfg)
     -- refresh must not publish a temporary empty slot while native APIs are being read.
     local soc = has(valid, NATIVE_BITS.soc) and quantize(S.soc * 250, 0, 250) or 0
     local strategy = has(valid, NATIVE_BITS.strategy) and S.strategy or 0
-    -- Only the native FA26 has a delivery controller; no other family writes this nibble.
-    local deploy = (S.kind == 'vanilla' and S.valid.deployInput == true)
+    -- Only the standard FA26 and the native hybrids have a delivery controller; no other family writes
+    -- this nibble.
+    local deploy = ((S.kind == 'vanilla' or S.kind == 'hybrid') and S.valid.deployInput == true)
       and (quantize(S.deployInput * DEPLOY_STEPS, 0, DEPLOY_STEPS) + 1) or 0
     local previousValid = r.f26n1owner[i] == owner and r.f26n1valid[i] or 0
     local retainedValid = 0
@@ -402,7 +491,7 @@ function M.new(ac, sim, cfg)
   end
   local recordSnap = {}
   function data.recordAll()
-    data.recordedPro, data.recordedVanilla, data.recordedDRS = 0, 0, 0
+    data.recordedPro, data.recordedVanilla, data.recordedDRS, data.recordedHybrid = 0, 0, 0, 0
     -- During replay these are CSP-owned read buffers: never clear or write them.
     if sim.isReplayActive then return 0 end
     if not cfg.recordReplay then clearStreams(); return 0 end
@@ -416,6 +505,7 @@ function M.new(ac, sim, cfg)
         elseif ownerBase(recordSnap.carID) and data.VRS and recordNative(recordSnap, i) then
           wroteNative = true
           if recordSnap.kind == 'vanilla' then data.recordedVanilla = data.recordedVanilla + 1
+          elseif recordSnap.kind == 'hybrid' then data.recordedHybrid = data.recordedHybrid + 1
           else data.recordedDRS = data.recordedDRS + 1 end
         end
       end
@@ -435,7 +525,7 @@ function M.new(ac, sim, cfg)
         end
       end
     end
-    return data.recordedPro + data.recordedVanilla + data.recordedDRS
+    return data.recordedPro + data.recordedVanilla + data.recordedDRS + data.recordedHybrid
   end
 
   local function replayPro(S, idx)
@@ -468,31 +558,39 @@ function M.new(ac, sim, cfg)
     local valid = integer(r.f26n1valid[idx], 0, 255)
     local state = integer(r.f26n1state[idx], 0, 255)
     if not valid or not state then return false end
+    -- The energy fields belong to the standard FA26 and the native hybrids only: any other car reads the
+    -- DRS subset of its slot, whatever else a newer writer put there.
+    local hybrid = S.kind == 'hybrid'
+    local energy = S.kind == 'vanilla' or hybrid
     for field, mask in pairs(NATIVE_STATE_BITS) do
-      if (S.kind == 'vanilla' or field == 'drsPresent' or field == 'drsAvailable' or field == 'drsActive')
+      if (energy or field == 'drsPresent' or field == 'drsAvailable' or field == 'drsActive')
           and has(valid, NATIVE_BITS[field]) then put(S, field, has(state, mask)) end
     end
-    if not M.validation.vanillaRecovery then put(S, 'recovering', nil) end
-    if S.kind == 'vanilla' and has(valid, NATIVE_BITS.soc) then
+    if hybrid then
+      if not M.validation.hybridRecovery then put(S, 'recovering', nil) end
+    elseif not M.validation.vanillaRecovery then put(S, 'recovering', nil) end
+    if energy and has(valid, NATIVE_BITS.soc) then
       local soc = integer(r.f26n1soc[idx], 0, 250)
       put(S, 'soc', soc and soc / 250)
     end
-    if S.kind == 'vanilla' then
+    if energy then
       -- One byte, two fields: the strategy index in bits 0-3, the deployment share in bits 4-7.
       local packed = integer(r.f26n1strategy[idx], 0, 255)
       local deploy = packed and math.floor(packed / 16)
-      if deploy and deploy > 0 and M.validation.vanillaDeploy then
+      local deployGate = hybrid and M.validation.hybridDeploy or (not hybrid and M.validation.vanillaDeploy)
+      if deploy and deploy > 0 and deployGate then
         put(S, 'deployInput', (deploy - 1) / DEPLOY_STEPS)
       end
       if packed and has(valid, NATIVE_BITS.strategy) then
         local strategy = packed % 16
-        if strategy <= 3 then
+        local name = contractName(S.kind, S.carID, strategy)
+        if name then
           put(S, 'strategy', strategy); put(S, 'strat', strategy + 1)
-          put(S, 'strategyName', STRATEGIES[strategy + 1])
+          put(S, 'strategyName', name)
         end
       end
     end
-    if S.kind == 'vanilla' then S.supported.soc, S.supported.boost = true, true end
+    if energy then S.supported.soc, S.supported.boost = true, true end
     S.supported.drsActive = S.drsPresent
     S.source = 'replay: native app stream, car ' .. idx
     return true
@@ -507,6 +605,12 @@ function M.new(ac, sim, cfg)
       S.candidate.recovering = boolean(get(car, 'kersCharging'))
       if not replayNative(S, idx) then S.source = 'replay: native FA26 history unavailable' end
       vanillaSemantics(S)
+    elseif S.kind == 'hybrid' then
+      -- As on the standard FA26: playback's own DRS and energy values are not history, only the record is.
+      nativeDRS(S, car, false)
+      S.candidate.recovering = boolean(get(car, 'kersCharging'))
+      if not replayNative(S, idx) then S.source = 'replay: native hybrid history unavailable' end
+      hybridSemantics(S)
     else
       nativeDRS(S, car, M.validation.legacyReplayDRS and S.physicsAvailable == true)
       if not replayNative(S, idx) then

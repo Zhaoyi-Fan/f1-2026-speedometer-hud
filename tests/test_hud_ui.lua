@@ -128,7 +128,7 @@ loadHud()
 check(savedLogWrites == 1, 'only the existing launch diagnostic is written to the in-memory stub')
 check(cfg.batteryTerminal == 'right', 'the battery terminal is on the right unless the user chooses otherwise')
 
-local function fixture(kind)
+local function fixture(kind, aero)
   local result = { kind = kind, name = 'Synthetic', source = 'fixture', index = 0,
     speed = 123, rpm = 11001, gear = 7, gas = 0.4, brake = 0.1, valid = {}, full = false }
   if kind == 'pro' then
@@ -136,9 +136,15 @@ local function fixture(kind)
     result.deploy, result.regen, result.regenLimit, result.strat, result.split, result.puMode = 1.25, 2, 8, 3, 2, 1
     result.smActive, result.otActive, result.boost = true, true, true
     result.otPending, result.charge, result.pl, result.plp, result.pitLimiter = false, false, false, false, false
-  elseif kind == 'vanilla' then
+  elseif kind == 'vanilla' or kind == 'hybrid' then
     result.soc, result.strategyName, result.recovering, result.smActive, result.boost = 0.5, 'NODEPLOY', true, true, true
     result.strategy, result.otActive, result.otPending, result.deployInput = 3, false, false, 0
+    if kind == 'hybrid' then
+      -- RSS by default ('sm'); 'drs' is the SP Mod rear flap
+      result.aero, result.strategyName, result.strategy = aero or 'sm', 'Override', 5
+      result.drsPresent, result.drsActive, result.drsAvailable = true, true, true
+      result.lapUsedKJ, result.lapCapKJ = 3210, 9000
+    end
   else
     result.drsPresent, result.drsActive = true, true
   end
@@ -237,7 +243,8 @@ local function batteryDigits(value, scale) scale = scale or 1; return findTextAt
 local function batteryWord(scale) scale = scale or 1; return findTextAt('BOOST', BODY_X[terminal()] * scale, 270 * scale) end
 local function boostBadge(scale) scale = scale or 1; return boxAt('rect', 122 * scale, 270 * scale, 96 * scale, 20 * scale) end
 local function sameHue(a, b) return a and b and near(a.r, b.r) and near(a.g, b.g) and near(a.b, b.b) end
-for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
+for _, variant in ipairs({ { 'pro' }, { 'vanilla' }, { 'drs' }, { 'hybrid', 'sm' }, { 'hybrid', 'drs' } }) do
+  local kind, aero = variant[1], variant[2]
   for _, lang in ipairs({ 'en', 'zh' }) do
     for _, scale in ipairs({ 0.5, 1, 2.5 }) do
       for _, showBattery in ipairs({ false, true }) do
@@ -245,10 +252,10 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
           for _, side in ipairs({ 'left', 'right' }) do
             cases = cases + 1
             cfg.lang, cfg.scale, cfg.showBattery, cfg.showPanel, cfg.batteryTerminal = lang, scale, showBattery, showPanel, side
-            snapshots[0] = fixture(kind)
+            snapshots[0] = fixture(kind, aero)
             render()
             local panel = showPanel and kind ~= 'drs'
-            local panelWidth = kind == 'vanilla' and 248 or 308
+            local panelWidth = (kind == 'vanilla' or kind == 'hybrid') and 248 or 308
             check(near(canvas.x, (340 + (panel and (12 + panelWidth) or 0)) * scale)
               and near(canvas.y, 340 * scale), kind .. ': expected canvas dimensions')
             local disc = commands[1]
@@ -266,17 +273,20 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
               check(colorEquals(matchingFill(drs), green), 'valid active native DRS illuminates')
               check(not textContains('MJ') and not textContains('kW') and not textContains('PU '), 'legacy layout has no Pro energy fields')
             else
-              local sm = findText('SM')
-              check(sm and not findText('DRS') and near(sm.y, 240 * scale) and near(sm.h, 24 * scale), '2026 SM badge keeps its row')
-              check(colorEquals(matchingFill(sm), green), 'a valid open SM is green')
+              -- a rear-flap hybrid names its one badge DRS; every other 2026 layout names it SM
+              local label = (kind == 'hybrid' and aero == 'drs') and 'DRS' or 'SM'
+              local sm = findText(label)
+              check(sm and not findText(label == 'SM' and 'DRS' or 'SM') and near(sm.y, 240 * scale) and near(sm.h, 24 * scale),
+                '2026 aero badge keeps its row: ' .. label)
+              check(colorEquals(matchingFill(sm), green), 'a valid open aero badge is green')
               if kind == 'pro' then
                 local ot = findText('OT')
                 check(ot and near(sm.x, 122 * scale) and near(sm.w, 45 * scale)
                   and near(ot.x, 173 * scale) and near(ot.w, 45 * scale) and near(ot.y, 240 * scale), 'the Pro keeps the SM | OT pair')
               else
-                -- The standard FA26 has no Overtake Mode: no OT badge, and SM spans the 96-unit slot.
-                check(not findText('OT'), 'the standard FA26 draws no OT badge')
-                check(near(sm.x, 122 * scale) and near(sm.w, 96 * scale), 'its SM badge takes the whole row')
+                -- The standard FA26 and the hybrids have no Overtake Mode: no OT badge, and the badge spans the 96-unit slot.
+                check(not findText('OT'), 'no OT badge without an Overtake Mode')
+                check(near(sm.x, 122 * scale) and near(sm.w, 96 * scale), 'the aero badge takes the whole row')
               end
               if showBattery then
                 check(not boostBadge(scale) and batteryBody(scale) and batteryRing(scale), 'battery glyph replaces the BOOST badge: ' .. side)
@@ -293,6 +303,16 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
               if kind == 'pro' then
                 check(colorEquals(matchingFill(findText('OT')), green), 'Pro OT retains its active indication')
                 if panel then check(findText('MGU-K') and textContains('MJ') and findText('PU RACE'), 'Pro panel keeps energy and PU fields') end
+              elseif kind == 'hybrid' then
+                -- the only MJ figure of a hybrid is its lap-deploy row, and only with the panel
+                check(not textContains('kW') and not textContains('PU ') and not findText('MGU-K'), 'hybrid layout excludes Pro-only quantities')
+                check(textContains('MJ') == panel, 'the lap-deploy row appears with the panel only')
+                if panel then
+                  check(findText('Override') and findText('50%'), 'hybrid program and battery percentage shown')
+                  check(findText('3.21 / 9.0 MJ') and findText(lang == 'zh' and '本圈部署' or 'Lap deploy'), 'hybrid lap-deploy row')
+                  local label = findText(lang == 'zh' and '电池' or 'Battery')
+                  check(label and label.font == (lang == 'zh' and 'Microsoft YaHei UI' or 'Bahnschrift'), 'localized label uses expected font family')
+                end
               else
                 check(not textContains('MJ') and not textContains('kW') and not textContains('PU ') and not findText('MGU-K'), 'ordinary layout excludes Pro-only quantities')
                 if panel then
@@ -302,7 +322,7 @@ for _, kind in ipairs({ 'pro', 'vanilla', 'drs' }) do
                 end
               end
             end
-            assertBounds(kind .. '/' .. lang .. '/' .. tostring(scale) .. '/' .. side)
+            assertBounds(kind .. (aero and ('-' .. aero) or '') .. '/' .. lang .. '/' .. tostring(scale) .. '/' .. side)
           end
         end
       end
@@ -510,6 +530,21 @@ check(sameHue(batteryRing().color, green), 'the requested share of this update o
 snapshots[1].valid.deployInput = false
 render()
 check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'without a requested share the recovery status still draws red')
+-- A native hybrid's glyph follows the same two native flows.
+snapshots[1] = fixture('hybrid')                                 -- recovering true, boost true, no deployment
+render()
+check(sameHue(batteryRing().color, redHue) and near(batteryRing().color.m, 0.35 + 0.65 * 0.6), 'hybrid recovery: red ring at the fixed intensity')
+check(colorEquals(batteryBody().color, boostColor), 'hybrid Boost button colours the body')
+snapshots[1].boost, snapshots[1].recovering, snapshots[1].deployInput = false, false, 0.285
+render()
+check(sameHue(batteryRing().color, green) and near(batteryRing().color.m, 0.35 + 0.65 * 0.285), 'hybrid deployment: green ring at the requested share')
+check(colorEquals(batteryBody().color, dark), 'hybrid automatic deployment never colours the body')
+snapshots[1].boost = true
+render()
+check(sameHue(batteryRing().color, boostColor), 'hybrid Boost while deploying: magenta ring')
+snapshots[1].boost, snapshots[1].deployInput = false, 0.01
+render()
+check(colorEquals(batteryRing().color, batteryIdle), 'a hybrid share inside the deadband leaves the ring idle')
 -- The native panel names both flow states, in the glyph's colours.
 snapshots[1] = fixture('vanilla')
 snapshots[1].deployInput, snapshots[1].recovering = 0.5, false
@@ -653,6 +688,8 @@ local mirrorStates = {
   { 'native recovering under Boost', 'vanilla', {} },
   { 'native deploying', 'vanilla', { boost = false, recovering = false, deployInput = 0.5 } },
   { 'native Boost with an unknown charge', 'vanilla', { deployInput = 0.5 }, { soc = false } },
+  { 'hybrid recovering under Boost', 'hybrid', {} },
+  { 'hybrid deploying', 'hybrid', { boost = false, recovering = false, deployInput = 0.285 } },
 }
 cfg.batterySmoothing, cfg.showBattery, cfg.showPanel, cfg.lang, sim.focusedCar = false, true, true, 'en', 1
 local mirrorCases = 0
@@ -866,6 +903,107 @@ snapshots[1].valid = {}
 render()
 check(colorEquals(matchingFill(findText('SM')), dark), 'unverified standard SM stays dark')
 
+-- Native hybrids: one aero badge across the row in the standard FA26's three states, SM for a DRS that moves
+-- both wings (RSS FHX 2026), DRS for a rear flap (SP Mod); each reads only its own fields.
+for _, aero in ipairs({ 'sm', 'drs' }) do
+  local label, other = aero == 'sm' and 'SM' or 'DRS', aero == 'sm' and 'DRS' or 'SM'
+  for _, case in ipairs(standardSm) do
+    for _, speed in ipairs({ 150, 0 }) do
+      local snap = { kind = 'hybrid', aero = aero, speed = speed, valid = {} }
+      if aero == 'sm' then
+        snap.smActive, snap.smAvailable, snap.valid.smActive, snap.valid.smAvailable = case.active, case.available, true, true
+      else
+        snap.drsActive, snap.drsAvailable, snap.valid.drsActive, snap.valid.drsAvailable = case.active, case.available, true, true
+      end
+      snapshots[1] = snap
+      render()
+      local badge, name = findText(label), label .. ' active ' .. tostring(case.active) .. ', available ' .. tostring(case.available) .. ', ' .. speed .. ' km/h'
+      check(badge and near(badge.x, 122) and near(badge.w, 96) and near(badge.y, 240) and near(badge.h, 24), 'hybrid badge spans the row: ' .. name)
+      check(colorEquals(matchingFill(badge), case.fill) and colorEquals(badge.color, case.ink), 'hybrid badge colours: ' .. name)
+      check(not findText('OT') and not findText(other), 'no OT and no second aero badge: ' .. name)
+    end
+  end
+end
+snapshots[1] = { kind = 'hybrid', aero = 'sm', speed = 150, drsActive = true, drsAvailable = true,
+  valid = { drsActive = true, drsAvailable = true } }
+render()
+check(colorEquals(matchingFill(findText('SM')), dark), 'a both-wing hybrid lights SM only from its gated SM fields')
+snapshots[1] = { kind = 'hybrid', aero = 'drs', speed = 150, smActive = true, smAvailable = true,
+  valid = { smActive = true, smAvailable = true } }
+render()
+check(colorEquals(matchingFill(findText('DRS')), dark), 'a rear-flap hybrid never reads SM fields')
+snapshots[1] = { kind = 'hybrid', aero = 'drs', speed = 150, drsActive = true, drsAvailable = true, valid = { drsAvailable = true } }
+render()
+check(colorEquals(matchingFill(findText('DRS')), yellow), 'an unverified open DRS flag cannot turn available into open')
+snapshots[1] = { kind = 'hybrid', aero = 'drs', speed = 150, valid = {} }
+render()
+check(colorEquals(matchingFill(findText('DRS')), dark) and colorEquals(batteryBody().color, dark), 'an empty hybrid snapshot stays dark')
+
+-- The hybrid panel: the standard FA26's compact panel plus the lap-deploy row, 40 units taller and centred.
+local orange, white, dimInk = rgbm(1, 0.45, 0.1, 1), rgbm(1, 1, 1, 1), rgbm(1, 1, 1, 0.35)
+cfg.scale, cfg.lang, cfg.showPanel, cfg.showBattery, cfg.diagnostics = 1, 'en', true, true, false
+snapshots[1] = fixture('hybrid')
+render()
+local hybridPanel = boxAt('rect', 352, 45, 248, 250)
+check(hybridPanel and colorEquals(hybridPanel.color, panelColor), 'hybrid panel: 248 x 250 at (352, 45)')
+local lapValue = findText('3.21 / 9.0 MJ')
+check(lapValue and near(lapValue.x, 366) and near(lapValue.y, 168) and near(lapValue.w, 220)
+  and lapValue.horizontal == ui.Alignment.End and colorEquals(lapValue.color, white), 'lap-deploy value right-aligned, white')
+check(findTextAt('Lap deploy', 366, 171), 'lap-deploy label under the program name')
+check(boxAt('rect', 366, 195, 220, 8), 'lap-deploy track across the panel')
+local lapFill = boxAt('rect', 366, 195, 220 * (3210 / 9000), 8)
+check(lapFill and colorEquals(lapFill.color, green), 'lap-deploy fill green at used / limit')
+check(findText('Deploying') and near(findText('Deploying').y, 45 + 183) and near(findText('Recovering').y, 45 + 183),
+  'the flow chips move under the new row')
+snapshots[1].lapUsedKJ = 9000
+render()
+check(findText('9.00 / 9.0 MJ') and colorEquals(findText('9.00 / 9.0 MJ').color, orange), 'a used-up limit turns the value orange')
+local fullBars = 0
+for _, command in ipairs(commands) do
+  if command.kind == 'rect' and near(command.x, 366) and near(command.y, 195) and near(command.w, 220)
+    and colorEquals(command.color, orange) then fullBars = fullBars + 1 end
+end
+check(fullBars == 1, 'and the bar is full and orange')
+snapshots[1].lapUsedKJ = 12500
+render()
+check(findText('12.50 / 9.0 MJ'), 'a count past the limit is shown as reported')
+fullBars = 0
+for _, command in ipairs(commands) do
+  if command.kind == 'rect' and near(command.x, 366) and near(command.y, 195) and near(command.w, 220)
+    and colorEquals(command.color, orange) then fullBars = fullBars + 1 end
+end
+check(fullBars == 1, 'while the bar stops at full')
+snapshots[1].lapUsedKJ = 0
+render()
+check(findText('0.00 / 9.0 MJ') and not boxAt('rect', 366, 195, 0, 8), 'zero at the line: the value, no fill')
+snapshots[1].valid.lapUsedKJ = false
+render()
+local lapUnknown = findTextAt('--', 366, 168)
+check(lapUnknown and colorEquals(lapUnknown.color, dimInk) and not textContains('MJ'), 'unknown lap energy reads --')
+cfg.lang = 'zh'
+snapshots[1] = fixture('hybrid')
+render()
+check(findText('本圈部署') and findText('本圈部署').font == 'Microsoft YaHei UI' and findText('3.21 / 9.0 MJ'), 'the row is translated')
+cfg.lang = 'en'
+snapshots[1] = fixture('hybrid', 'drs')
+render()
+check(boxAt('rect', 352, 45, 248, 250) and findText('Lap deploy'), 'the SP profile has the same panel')
+-- the standard FA26's panel is untouched by all this
+snapshots[1] = fixture('vanilla')
+render()
+check(boxAt('rect', 352, 65, 248, 210) and not boxAt('rect', 352, 45, 248, 250), 'standard panel keeps its size and place')
+check(not findText('Lap deploy') and not textContains('MJ'), 'and has no lap-deploy row')
+check(near(findText('Deploying').y, 65 + 144), 'and its chips stay where they were')
+cfg.diagnostics = true
+snapshots[1] = fixture('hybrid')
+render()
+check(findTextAt('fixture', 366, 45 + 224), 'the data source line sits under the hybrid chips')
+snapshots[1] = fixture('vanilla')
+render()
+check(findTextAt('fixture', 366, 65 + 185), 'and under the standard chips where it always was')
+cfg.diagnostics = false
+print('Native hybrids: aero badge states, profile fields, lap-deploy row and panel geometry passed')
+
 snapshots[2] = fixture('drs')
 snapshots[2].drsPresent, snapshots[2].drsActive = false, false
 sim.focusedCar = 2
@@ -945,17 +1083,18 @@ local sequence = {
   { 0, 0.8, 5, true }, { 0, 0.8, 5, false },
 }
 for _, replay in ipairs({ false, true }) do
-  for _, kind in ipairs({ 'vanilla', 'pro', 'drs' }) do
+  for _, kind in ipairs({ 'vanilla', 'pro', 'drs', 'hybrid' }) do
     sim.isReplayActive, sim.replayCurrentFrame, sim.replayFrameMs, sim.replayPlaybackRate = replay, 100, 15, 1
     snapshots[0] = fixture(kind)
+    local native = kind == 'vanilla' or kind == 'hybrid'
     for i, step in ipairs(sequence) do
       snapshots[0].gas, snapshots[0].brake, snapshots[0].gear = step[1], step[2], step[3]
-      if kind == 'vanilla' then snapshots[0].recovering = step[4] end
+      if native then snapshots[0].recovering = step[4] end
       sim.replayCurrentFrame = sim.replayCurrentFrame + 1
       render()
       local label = kind .. (replay and ' replay' or ' live') .. ' step ' .. i
       check(close(visibleGas(), step[1]) and close(visibleBrake(), step[2]), 'pedal arcs draw the current values without filtering: ' .. label)
-      if kind == 'vanilla' then check(recoveryLit() == step[4], 'recovery chip draws the current state without debounce: ' .. label) end
+      if native then check(recoveryLit() == step[4], 'recovery chip draws the current state without debounce: ' .. label) end
       check(canonicalView.gas == step[1] and canonicalView.brake == step[2], 'canonical pedal values are the drawn values: ' .. label)
     end
   end
@@ -970,7 +1109,7 @@ render()
 check(close(visibleGas(), 0.2) and not recoveryLit(), 'pause shows the current values; there is no retained display state')
 sim.dt = 0.015
 check(cfg.hideShiftTransients == nil and cfg.smoothNative == nil, 'no pedal or recovery display filter setting exists')
-print('Raw pedal arcs and recovery chip: ' .. tostring(#sequence) .. '-step assist sequence, three adapters, live and replay passed')
+print('Raw pedal arcs and recovery chip: ' .. tostring(#sequence) .. '-step assist sequence, four adapters, live and replay passed')
 
 -- Replay gap diagnostics (never drawn): short holes in recorded native history are counted.
 local logged = {}
@@ -1024,10 +1163,17 @@ playFrames(3, true, 'drsActive')
 playFrames(2, false, 'drsActive')
 playFrames(1, true, 'drsActive')
 check(select(1, lastGapReport()) == baseCount + 2, 'conventional-car DRS history holes are counted too')
+snapshots[0] = fixture('hybrid')
+snapshots[0].valid.drsActive = false   -- a frame counts as recorded while either the battery or the DRS is valid
+fire('replay', 'hybrid')
+playFrames(3, true, 'soc')
+playFrames(2, false, 'soc')
+playFrames(1, true, 'soc')
+check(select(1, lastGapReport()) == baseCount + 3, 'native-hybrid history holes are counted too')
 sim.isReplayActive = false
-playFrames(1, false, 'drsActive')
-playFrames(1, true, 'drsActive')
-check(select(1, lastGapReport()) == baseCount + 2, 'live sessions never count replay gaps')
+playFrames(1, false, 'soc')
+playFrames(1, true, 'soc')
+check(select(1, lastGapReport()) == baseCount + 3, 'live sessions never count replay gaps')
 os.clock = realClock
-print('Replay gap diagnostics: hole, long stretch, jump, seek, DRS subset and live checks passed')
+print('Replay gap diagnostics: hole, long stretch, jump, seek, DRS subset, hybrid and live checks passed')
 print('UI assertions passed: ' .. tostring(checks))

@@ -1,12 +1,13 @@
 -- F1 2026 Speedometer HUD
--- Broadcast-style speedometer with exact FA26 Pro/native and conventional DRS adapters.
+-- Broadcast-style speedometer with exact FA26 Pro/native, native-hybrid (RSS FHX 2026, SP Mod 2026) and
+-- conventional DRS adapters.
 -- The original dial is shared; energy and state fields depend on the viewed vehicle.
 -- Keeps the Pro energy stream and records verified native fields separately for slots 0-21.
 -- Read-only with respect to car and track files (league-safe).
 -- Source: https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud
 -- Data contract (CAN channel names, replay layout): docs/DATA-CONTRACT.md in the repository.
 
-local VERSION = '0.9.39'
+local VERSION = '0.9.39+hybrid'
 local TAG = '[F1-2026-HUD]'
 local MAX_CARS = 22          -- replay stream slots: 11 bytes per car -> 242 bytes per frame (limit 256)
 local SPEED_MAX = 360        -- arc full scale; the numeric readout can exceed this
@@ -98,6 +99,7 @@ local STR = {
   cap = { en = 'cap %s kW', zh = '上限 %s kW' },
   clip = { en = 'clip %s kW', zh = '强制回收 %s kW' },
   lapEnergy = { en = 'Lap energy', zh = '本圈能量' },
+  lapDeploy = { en = 'Lap deploy', zh = '本圈部署' },
   deploy = { en = 'Deploy %.2f MJ', zh = '部署 %.2f MJ' },
   regenLim = { en = 'Regen %.2f / %.1f MJ', zh = '回收 %.2f / %.1f MJ' },
   regen = { en = 'Regen %.2f MJ', zh = '回收 %.2f MJ' },
@@ -194,8 +196,8 @@ end
 -- Battery ring state from the current update only, in the data contract's order: no hysteresis, no hold.
 -- Returns the state ('harvest', 'deploy', 'boost' or 'idle') and the raw intensity 0..1 (nil when no flow is known).
 local function batteryFlow(S)
-  if S.kind == 'vanilla' then
-    -- The native car reports no power. Deployment is the share its delivery controller requests
+  if S.kind == 'vanilla' or S.kind == 'hybrid' then
+    -- A native car reports no power. Deployment is the share its delivery controller requests
     -- (`deployInput`, throttle x speed map), drawn like a Pro deployment but with the requested share
     -- as the brightness; recovery is a status flag drawn at a declared fixed intensity. Deployment is
     -- tested first: it is a live input, while recovery is a state the car can hold off throttle.
@@ -342,7 +344,8 @@ if type(ac.onReplay) == 'function' then pcall(ac.onReplay, resetReplayGapTrackin
 
 local function trackReplayGaps()
   local g, frame = replayGaps, sim.replayCurrentFrame
-  if not sim.isReplayActive or type(frame) ~= 'number' or (view.kind ~= 'vanilla' and view.kind ~= 'drs') then
+  if not sim.isReplayActive or type(frame) ~= 'number'
+      or (view.kind ~= 'vanilla' and view.kind ~= 'drs' and view.kind ~= 'hybrid') then
     resetReplayGapTracking()
     return
   end
@@ -404,12 +407,12 @@ local function runDiagnostics()
         tostring(view.wingF), tostring(view.wingR), view.speed or 0, tostring(view.gear), view.gas or 0, batState, batRaw or 0)
       ac.log(l2)
       diagFileAppend(l2)
-    elseif view.kind == 'vanilla' or view.kind == 'drs' then
+    elseif view.kind == 'vanilla' or view.kind == 'drs' or view.kind == 'hybrid' then
       local batState, batRaw = batteryFlow(view)
       -- Native KERS properties of the selected live car, so the shown deployment can be compared
       -- with the car's own input, load and store contents in a single lap.
       local probe = ''
-      if view.kind == 'vanilla' and not sim.isReplayActive and view.index then
+      if (view.kind == 'vanilla' or view.kind == 'hybrid') and not sim.isReplayActive and view.index then
         local car = ac.getCar(view.index)
         if car then
           probe = string.format(' | probe kersInput=%.3f kersLoad=%.3f kJ=%.1f/%.1f charging=%s gas=%.2f speed=%.0f',
@@ -417,13 +420,18 @@ local function runDiagnostics()
             tostring(car.kersCharging), numOr(car.gas), numOr(car.speedKmh))
         end
       end
-      local l2 = string.format('%s native kind=%s soc=%s boost=%s strategy=%s recovering=%s deploy=%s/%s drs=%s/%s/%s sm=%s/%s valid=%s/%s/%s/%s/%s nativeStream=%s recordedNative=%d/%d emptyNative=%d lastEmpty=%s:%s | bat=%s/%.2f%s',
+      if view.kind == 'hybrid' then
+        probe = string.format('%s | hybrid aero=%s lap=%s/%s', probe, tostring(view.aero),
+          tostring(view.lapUsedKJ), tostring(view.lapCapKJ))
+      end
+      local l2 = string.format('%s native kind=%s soc=%s boost=%s strategy=%s recovering=%s deploy=%s/%s drs=%s/%s/%s sm=%s/%s valid=%s/%s/%s/%s/%s nativeStream=%s recordedNative=%d/%d/%d emptyNative=%d lastEmpty=%s:%s | bat=%s/%.2f%s',
         TAG, tostring(view.kind), tostring(view.soc), tostring(view.boost), tostring(view.strategyName),
         tostring(view.recovering), tostring(view.deployInput), tostring(valid(view, 'deployInput')),
         tostring(view.drsPresent), tostring(view.drsAvailable), tostring(view.drsActive),
         tostring(view.smAvailable), tostring(view.smActive), tostring(valid(view, 'soc')), tostring(valid(view, 'boost')),
         tostring(valid(view, 'strategy')), tostring(valid(view, 'recovering')), tostring(valid(view, 'drsActive')),
         data.VRS and 'ok' or tostring(data.vrsErr), data.recordedVanilla or 0, data.recordedDRS or 0,
+        data.recordedHybrid or 0,
         gaps.totalNativeEmpty or 0, tostring(gaps.lastNativeIndex or -1), tostring(gaps.lastNativeReason or 'none'),
         batState, batRaw or 0, probe)
       ac.log(l2)
@@ -534,11 +542,18 @@ local function pill(font, x, y, w, h, fill, border, label, size, txtColor, round
 end
 
 local function smState(S)
-  if S.kind == 'vanilla' then
+  if S.kind == 'vanilla' or (S.kind == 'hybrid' and S.aero == 'sm') then
     if valid(S, 'smActive') and S.smActive then return 'on' end
     -- The standard car's SM is native DRS: it becomes available only inside the zone and has no
     -- pre-latch window, so it takes the Pro's yellow "available, already in the zone" colour, never white.
+    -- A native hybrid whose DRS moves both wings (RSS's X-mode) is the same mechanism.
     if valid(S, 'smAvailable') and S.smAvailable then return 'late' end
+    return 'off'
+  end
+  if S.kind == 'hybrid' then
+    -- A rear-flap native hybrid keeps DRS, drawn in the same three states as the badge it replaces.
+    if valid(S, 'drsActive') and S.drsActive then return 'on' end
+    if valid(S, 'drsAvailable') and S.drsAvailable then return 'late' end
     return 'off'
   end
   if S.kind ~= 'pro' then return 'off' end
@@ -705,7 +720,7 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
   -- Width budget (v0.9): the throttle / brake track start caps (r 13.5 at (103.2, 269.1) and (236.8, 269.1))
   -- narrow the free channel to x 116.7-223.3 at y 269, so the cluster is 96 wide (x 122-218) to clear
   -- both caps by >= 5 units on every row; v0.8's 120-wide cluster overlapped them (seen in-game).
-  if S.kind ~= 'pro' and S.kind ~= 'vanilla' then
+  if S.kind ~= 'pro' and S.kind ~= 'vanilla' and S.kind ~= 'hybrid' then
     local on = valid(S, 'drsActive') and S.drsActive == true
     pill(fontB, ox + 122 * s, oy + 251 * s, 96 * s, 28 * s,
       on and C.green or C.track, nil, 'DRS', 16 * s, on and C.white or C.dim, 6 * s)
@@ -718,8 +733,10 @@ local function drawDial(S, ox, oy, s, fontB, fontR, fontM)
       elseif valid(S, 'otPending') and S.otPending then otFill, otBorder, otTxt = nil, C.white, C.white end
       pill(fontB, ox + 173 * s, oy + 240 * s, 45 * s, 24 * s, otFill, otBorder, 'OT', 15 * s, otTxt, 6 * s, 2 * s)
     else
-      -- The standard FA26 has no Overtake Mode at all, so there is no OT badge and SM takes the whole row.
-      pill(fontB, ox + 122 * s, oy + 240 * s, 96 * s, 24 * s, st.fill, nil, st.label, 15 * s, st.txt, 6 * s)
+      -- The standard FA26 and the native hybrids have no Overtake Mode at all, so there is no OT badge and
+      -- the one aero badge takes the whole row: SM, or DRS for a hybrid whose DRS is the rear flap only.
+      local label = (S.kind == 'hybrid' and S.aero ~= 'sm') and 'DRS' or st.label
+      pill(fontB, ox + 122 * s, oy + 240 * s, 96 * s, 24 * s, st.fill, nil, label, 15 * s, st.txt, 6 * s)
     end
     if cfg.showBattery then
       drawBattery(S, ox, oy, s, fontB)   -- the glyph's body carries the Boost button, its ring the energy flow
@@ -852,9 +869,14 @@ local function drawPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
 end
 
 local VANILLA_PANEL_W = 248
+-- The standard FA26's compact panel. A native hybrid adds one row under the program name: the energy
+-- deployed this lap against the car's per-lap limit (a live reading; replays carry no record of it), so its
+-- panel is 40 units taller, keeps the same spacing below the new row and stays centred on the dial.
 local function drawVanillaPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
-  local px, py, pw, ph = panelX, oy + 65 * s, VANILLA_PANEL_W * s, 210 * s
+  local lapRow = S.kind == 'hybrid'
+  local px, py, pw, ph = panelX, oy + (lapRow and 45 or 65) * s, VANILLA_PANEL_W * s, (lapRow and 250 or 210) * s
   local lx, cw = px + 14 * s, pw - 28 * s
+  local chipsY, sourceY = lapRow and 183 or 144, lapRow and 224 or 185
   ui.drawRectFilled(vec2(px, py), vec2(px + pw, py + ph), C.panel, 10 * s)
   text(fontLR, L('battery'), 12 * s, lx, py + 12 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
   local soc = valid(S, 'soc') and clamp(S.soc, 0, 1) or nil
@@ -865,19 +887,36 @@ local function drawVanillaPanel(S, panelX, oy, s, fontB, fontR, fontLB, fontLR)
   if soc and soc > 0.002 then ui.drawRectFilled(vec2(lx, by), vec2(lx + cw * soc, by + bh), low and C.yellow or C.batFill, 3 * s) end
   text(fontLR, L('strategy'), 12 * s, lx, py + 72 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
   text(fontB, valid(S, 'strategy') and S.strategyName or '--', 20 * s, lx, py + 91 * s, cw, 28 * s, C.white, ui.Alignment.Start)
+  if lapRow then
+    -- Deployed this lap / the car's limit, green like deployment; orange once the limit is reached, the
+    -- panel's colour for deployment that is not allowed.
+    text(fontLR, L('lapDeploy'), 12 * s, lx, py + 126 * s, cw, 16 * s, C.grey, ui.Alignment.Start)
+    local ly, lh = py + 150 * s, 8 * s
+    ui.drawRectFilled(vec2(lx, ly), vec2(lx + cw, ly + lh), C.barTrack, 2 * s)
+    if valid(S, 'lapUsedKJ') and valid(S, 'lapCapKJ') then
+      local used, cap = math.max(S.lapUsedKJ, 0), S.lapCapKJ
+      local spent = used >= cap
+      local fr = clamp(used / cap, 0, 1)
+      if fr > 0.002 then ui.drawRectFilled(vec2(lx, ly), vec2(lx + cw * fr, ly + lh), spent and C.orange or C.green, 2 * s) end
+      text(fontB, string.format('%.2f / %.1f MJ', used / 1000, cap / 1000), 15 * s, lx, py + 123 * s, cw, 22 * s,
+        spent and C.orange or C.white, ui.Alignment.End)
+    else
+      text(fontB, '--', 15 * s, lx, py + 123 * s, cw, 22 * s, C.dim, ui.Alignment.End)
+    end
+  end
   -- The two flow states the native car reports, in the dial glyph's colours: the deployment share
   -- its delivery controller requests, and its recovery status.
   local deployKnown = valid(S, 'deployInput')
   local deploying = deployKnown and S.deployInput > BAT.vanillaDeadband
   local cellW = (cw - 12 * s) * 0.5
-  chip(fontLB, lx, py + 144 * s, cellW, 28 * s, deploying, C.green,
+  chip(fontLB, lx, py + chipsY * s, cellW, 28 * s, deploying, C.green,
     deployKnown and L('deploying') or (L('deploying') .. ' --'), s)
   local recoveryKnown = valid(S, 'recovering')
   local recovering = recoveryKnown and S.recovering
-  chip(fontLB, lx + cellW + 12 * s, py + 144 * s, cellW, 28 * s, recovering, C.red,   -- same red as the dial's harvest ring
+  chip(fontLB, lx + cellW + 12 * s, py + chipsY * s, cellW, 28 * s, recovering, C.red,   -- same red as the dial's harvest ring
     recoveryKnown and L('recovering') or (L('recovering') .. ' --'), s)
   if cfg.diagnostics then
-    text(fontR, tostring(S.source), 10 * s, lx, py + 185 * s, cw, 16 * s, C.dim, ui.Alignment.Start)
+    text(fontR, tostring(S.source), 10 * s, lx, py + sourceY * s, cw, 16 * s, C.dim, ui.Alignment.Start)
   end
 end
 
@@ -886,12 +925,13 @@ function script.windowMain(dt)
   local fontB, fontR, fontLB, fontLR, fontM = getFonts()
   local o = ui.getCursor()
   local ox, oy = o.x, o.y
-  local pro, vanilla = view.kind == 'pro', view.kind == 'vanilla'
-  local panel = cfg.showPanel and (pro or vanilla)
-  local panelW = vanilla and VANILLA_PANEL_W or PANEL_W
+  -- the standard FA26 and the native hybrids share the compact panel
+  local pro, native = view.kind == 'pro', view.kind == 'vanilla' or view.kind == 'hybrid'
+  local panel = cfg.showPanel and (pro or native)
+  local panelW = native and VANILLA_PANEL_W or PANEL_W
   drawDial(view, ox, oy, s, fontB, fontR, fontM)
   if panel then
-    local draw = vanilla and drawVanillaPanel or drawPanel
+    local draw = native and drawVanillaPanel or drawPanel
     draw(view, ox + (DIAL_W + PANEL_GAP) * s, oy, s, fontB, fontR, fontLB, fontLR)
   end
   ui.setCursor(o)
