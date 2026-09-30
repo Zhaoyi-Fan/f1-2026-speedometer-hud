@@ -1,7 +1,7 @@
-# Compatibility and validation — version 0.9.4
+# Compatibility and validation — version 0.9.40
 
-Updated 2026-09-28. Runtime reference: CSP build 4116 (the native-hybrid samples: build 4169). Version
-0.9.4 adds RSS Formula Hybrid X 2026 and the seven SP Mod F1 2026 cars as native hybrids, recorded in
+Updated 2026-09-30. Runtime reference: CSP build 4116 (the native-hybrid samples: build 4169). Version
+0.9.40 adds RSS Formula Hybrid X 2026 and the seven SP Mod F1 2026 cars as native hybrids, recorded in
 the generic replay family; everything below that predates it is unchanged. Version 0.9.3 replaced the side bars with a
 battery glyph inside the dial; version 0.9.35 reads one further native field on the standard FA26,
 its deployment request, and gives that car's panel a second chip; version 0.9.36 writes the word BOOST
@@ -91,10 +91,10 @@ backups and machine logs are excluded from the repository.
   taller panel beside the unchanged standard one; check
   that the pedal arcs and recovery chip draw each update's values through an upshift cut and an
   auto-blip (three vehicle kinds, live and replay); and cover the `replayGaps` diagnostic.
-- 0.9.4 one-off checks, not part of the suites: 38 deliberate mutations of the new code were each
+- 0.9.40 one-off checks, not part of the suites: 38 deliberate mutations of the new code were each
   caught by the suites; 6,144 rendered states of the Pro, the standard FA26 and conventional cars (both
   terminal sides, easing and diagnostics on and off) compared draw call by draw call with 0.9.39 are
-  identical; and the 0.9.39 and 0.9.4 readers and writers were run against each other's recordings (471
+  identical; and the 0.9.39 and 0.9.40 readers and writers were run against each other's recordings (471
   assertions), including byte-identical slots for every car that is not a native hybrid.
 - 0.9.39 one-off checks, not part of the suites: 20 deliberate code mutations of the new badge and
   recording logic were each caught by these tests; 1,536 rendered states compared draw call by draw

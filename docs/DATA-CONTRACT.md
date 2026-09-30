@@ -1,6 +1,6 @@
 # Data contract
 
-This document describes version 0.9.4 (native-hybrid profiles for RSS Formula Hybrid X 2026 and
+This document describes version 0.9.40 (native-hybrid profiles for RSS Formula Hybrid X 2026 and
 the SP Mod F1 2026 cars, recorded in the generic family), on top of 0.9.39 (the glyph's percentage
 beside its terminal, the standard FA26's badge row and the generic DRS recording family), 0.9.38's
 right-facing battery glyph,
@@ -23,7 +23,7 @@ in [COMPATIBILITY.md](COMPATIBILITY.md).
 | Replay, exact Pro | AC's own replay | Original Pro stream; H / I only when that stream is absent |
 | Replay, exact native FA26 | AC's own replay | Native-state stream, independently valid fields; no unverified native false/zero fallback |
 | Replay, exact FA25 CSP | AC's own replay | Native-state DRS recording if present; tested native history is unreliable |
-| Replay, native hybrid | AC's own replay | Native-state stream, generic family: the energy fields from recordings made since 0.9.4, only the DRS from 0.9.39 recordings; the lap-deploy row is never recorded. For these cars CSP playback returned a frozen or zero battery, no request or button and a fixed DRS state |
+| Replay, native hybrid | AC's own replay | Native-state stream, generic family: the energy fields from recordings made since 0.9.40, only the DRS from 0.9.39 recordings; the lap-deploy row is never recorded. For these cars CSP playback returned a frozen or zero battery, no request or button and a fixed DRS state |
 | Replay, other conventional car | AC's own replay | Native-state DRS recording (generic family, since 0.9.39) if present; otherwise unknown/dark, because CSP playback returns no DRS history |
 
 The car index is the camera-focused car (`sim.focusedCar`, then `sim.closelyFocusedCar`, then 0),
@@ -261,11 +261,11 @@ is the exact layout below. The Pro layout is never enlarged or reused for native
 
 | Field | Array element | Encoding |
 | --- | --- | --- |
-| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; any other car reporting a native DRS component (0.9.39), and a native hybrid (0.9.4), `0xA000 + index + 1`; 0 = absent |
+| `f26n1owner` | uint16 | Native FA26 `0xA600 + index + 1`; exact FA25 CSP `0xA500 + index + 1`; any other car reporting a native DRS component (0.9.39), and a native hybrid (0.9.40), `0xA000 + index + 1`; 0 = absent |
 | `f26n1valid` | uint8 | bit 0 SoC, 1 BOOST, 2 strategy, 3 recovery, 4 DRS present, 5 available, 6 active |
 | `f26n1state` | uint8 | bit 0 BOOST, 1 recovery, 2 DRS present, 3 available, 4 active |
 | `f26n1soc` | uint8 | SoC × 250, nearest integer, range 0–250; max error 0.2 percentage points |
-| `f26n1strategy` | uint8 | bits 0-3: the program index, 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY on the standard FA26 and the profile's list on a native hybrid (0.9.4). bits 4-7 (0.9.35; native hybrids since 0.9.4): 0 = no deployment request recorded, 1-15 = nearest integer of request × 14, plus 1, so the request carries its own validity and needs no bit in `f26n1valid`; steps of 1/14, max error 0.036 of the request, and a request below 0.036 records as zero |
+| `f26n1strategy` | uint8 | bits 0-3: the program index, 0 LOW, 1 MEDIUM, 2 HIGH, 3 NODEPLOY on the standard FA26 and the profile's list on a native hybrid (0.9.40). bits 4-7 (0.9.35; native hybrids since 0.9.40): 0 = no deployment request recorded, 1-15 = nearest integer of request × 14, plus 1, so the request carries its own validity and needs no bit in `f26n1valid`; steps of 1/14, max error 0.036 of the request, and a request below 0.036 records as zero |
 
 Each field is an array of length 22. The 0.9.35 addition deliberately stays inside this layout: the
 slot count, the byte count, the divisor and every validity bit are those of schema 1, so recordings
@@ -291,12 +291,12 @@ a native slot. Readers older than 0.9.39 know no generic family and leave such s
 layout, the other two families and every validity bit are unchanged, so recordings restore field for
 field in both directions.
 
-Since 0.9.4 a native hybrid stays in the generic family and adds its battery, BOOST, program,
+Since 0.9.40 a native hybrid stays in the generic family and adds its battery, BOOST, program,
 recovery and deployment-request fields to the same slot, with the same bits and encodings as the
 standard FA26; it is also written, and counted as a gap when missing, while it reports KERS without a
 DRS component. The car ID tells the reader which profile applies, so no new family code is needed. A
 0.9.39 reader takes only the DRS bits from a generic slot, so it still shows the recorded DRS of these
-cars and nothing else; a 0.9.4 reader of a 0.9.39 recording gets their DRS and no energy fields.
+cars and nothing else; a 0.9.40 reader of a 0.9.39 recording gets their DRS and no energy fields.
 The lap-deploy row is not recorded.
 
 Integers are intentional: the official SDK struct builder gives these raw integer items no

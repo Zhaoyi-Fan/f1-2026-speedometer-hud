@@ -6,7 +6,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 
 | Version | In one line |
 | --- | --- |
-| 0.9.4 | **New:** RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars get their own layout — aero badge, battery glyph, program name and a lap-deploy row — recorded into replays |
+| 0.9.40 | **New:** RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars get their own layout — aero badge, battery glyph, program name and a lap-deploy row — recorded into replays |
 | 0.9.39 | **Changed:** the glyph's percentage sits beside the terminal and the bolt at the other end; the standard FA26 loses its always-dark `OT` badge, and its `SM` spans the row and turns yellow when available; **New:** DRS replay recording for every car with native DRS |
 | 0.9.38 | **Changed:** the battery glyph faces right, like a common battery icon; a new setting turns it back to the left |
 | 0.9.37 | **Fix:** the Pro's whole energy frame was missing from replays whenever Straight Mode was engaged |
@@ -26,7 +26,7 @@ Development and in-game testing used the VRC Formula Alpha 2026 Pro with CSP bui
 | 0.2 | **Changed:** 1-based PU names, opaque arc tracks, a persistent diagnostics file |
 | 0.1 | First build |
 
-## 0.9.4 — 2026-09-28
+## 0.9.40 — 2026-09-30
 
 Adds RSS Formula Hybrid X 2026 and the seven SP Mod F1 2026 cars, each drawn from AC's own ERS and DRS
 through a profile of that car. The Pro, the standard FA26 and conventional cars draw exactly what
@@ -45,15 +45,15 @@ through a profile of that car. The Pro, the standard FA26 and conventional cars 
   orange once the limit is reached) and the `Deploying` / `Recovering` chips. The lap row is live only.
 - **New: replay recording for these cars**, in the generic family of 0.9.39: battery, BOOST, program,
   recovery and deployment request join the DRS state in the same slot, without changing the layout.
-  0.9.39 keeps reading these cars' DRS from new recordings; 0.9.4 reads only the DRS from 0.9.39
+  0.9.39 keeps reading these cars' DRS from new recordings; 0.9.40 reads only the DRS from 0.9.39
   recordings. A program is recorded only when its name matches the car's profile.
 - **Checked in game** before the release (two races on a 2026 Silverstone layout mixing RSS and SP Mod
   cars, CSP build 4169): every AI car reported every field, the request equalled each program's own
   tables, the battery followed the recovery and deployment flags, the lap counter counted deployment
-  only and restarted every lap, the RSS's DRS changed the lift of both wings, the driven car's availability rose at every zone start
-  with no gap required, the program names
-  matched the profiles live and in replay, and replays read the app's own record. The on-screen
-  layout of the new cars still awaits a look in game; see [COMPATIBILITY.md](docs/COMPATIBILITY.md).
+  only and restarted every lap, the RSS's DRS changed the lift of both wings, the driven car's
+  availability rose at every zone start with no gap required, the program names matched the profiles
+  live and in replay, and replays read the app's own record. The on-screen layout of the new cars
+  still awaits a look in game; see [COMPATIBILITY.md](docs/COMPATIBILITY.md).
 - The diagnostics line now reads `recordedNative=<standard>/<conventional>/<hybrid>` and, on a hybrid,
   adds `hybrid aero=… lap=…`.
 - Tests: data 878 checks (was 652), UI 23,214 (was 15,190).

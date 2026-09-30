@@ -151,8 +151,8 @@ The following describes how these systems work in the VRC Formula Alpha 2026 Pro
 
 ## Install
 
-**Release zip:** download `f1-2026-speedometer-hud-v0.9.4.zip` from the
-[v0.9.4 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.4)
+**Release zip:** download `f1-2026-speedometer-hud-v0.9.40.zip` from the
+[v0.9.40 release](https://github.com/Zhaoyi-Fan/f1-2026-speedometer-hud/releases/tag/v0.9.40)
 and extract it into your Assetto Corsa root folder (the
 one with `acs.exe`). You should end up with
 `assettocorsa\apps\lua\f1_2026_speedometer_hud\manifest.ini`. Dropping the zip onto Content Manager
@@ -160,7 +160,7 @@ also works.
 
 **Updating:** close the current game session, install the new zip over the existing app and
 allow its files to be replaced. The existing HUD settings are retained. Start a new session or
-replay and check that the settings window shows version **0.9.4**. Since 0.9.4 the RSS Formula Hybrid
+replay and check that the settings window shows version **0.9.40**. Since 0.9.40 the RSS Formula Hybrid
 X 2026 and the SP Mod F1 2026 cars have their own layout, with a taller compact panel. Since 0.9.39
 the standard FA26 shows `SM` across the badge row and no `OT` badge, and the glyph's percentage sits
 beside its terminal.
@@ -214,10 +214,10 @@ Recordings made by earlier versions restore exactly as before. A recording made 
 opened in an earlier version shows the standard FA26's strategy as unavailable, because those
 versions accept that byte only as a plain index; every other recorded field still restores.
 
-Version 0.9.4 keeps the RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars in that generic family
+Version 0.9.40 keeps the RSS Formula Hybrid X 2026 and the SP Mod F1 2026 cars in that generic family
 and adds their battery, BOOST, program, recovery and deployment request to the same record, again
 without changing the layout. Version 0.9.39 still reads those cars' recorded DRS and nothing else; a
-0.9.39 recording opened in 0.9.4 gives them their DRS and leaves the energy readings unknown. The
+0.9.39 recording opened in 0.9.40 gives them their DRS and leaves the energy readings unknown. The
 lap-deploy row is not recorded. CSP's own playback of these cars returns no energy or DRS history.
 
 When that data is present, the HUD can show the recorded energy readings in saved and in-session

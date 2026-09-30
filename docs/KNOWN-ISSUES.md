@@ -1,6 +1,6 @@
-# Known issues — version 0.9.4
+# Known issues — version 0.9.40
 
-Updated 2026-09-28 for version 0.9.4 (native-hybrid layouts for RSS Formula Hybrid X 2026 and the SP Mod
+Updated 2026-09-30 for version 0.9.40 (native-hybrid layouts for RSS Formula Hybrid X 2026 and the SP Mod
 F1 2026 cars), on top of version 0.9.39 (the glyph's percentage beside its terminal, the standard FA26's
 badge row and DRS recording for every car with native DRS, on 0.9.38's right-facing battery glyph and its terminal setting, 0.9.37's Straight Mode
 latch fix, 0.9.36's word BOOST, 0.9.35's standard-FA26 deployment request and 0.9.3's in-dial battery

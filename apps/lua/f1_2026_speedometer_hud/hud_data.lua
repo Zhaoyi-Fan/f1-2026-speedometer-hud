@@ -166,7 +166,7 @@ local NATIVE_STATE_BITS = { boost = 1, recovering = 2, drsPresent = 4,
 -- the generic family, and only while it reports a DRS component (the Pro's adapter never reads native
 -- DRS, so a Pro never qualifies); readers older than 0.9.39 know no generic family and leave those
 -- slots unread. A native hybrid stays in the generic family and adds its energy fields to the same
--- slot (0.9.4x): a 0.9.39 reader takes only the DRS bits from a generic slot, so it keeps showing the
+-- slot (0.9.40): a 0.9.39 reader takes only the DRS bits from a generic slot, so it keeps showing the
 -- recorded DRS of these cars, and the car ID already tells a newer reader which profile applies.
 local GENERIC_BASE = 0xA000
 local function ownerBase(id)
